@@ -42,7 +42,7 @@ EZMoveIt/
 Clone the repo and install required Python packages:
 
 ```bash
-git clone https://github.com/your-repo/EZMoveIt.git
+git clone https://github.com/vwilson05/EZMoveIt.git
 cd EZMoveIt
 python3 -m venv venv
 source venv/bin/activate  # macOS/Linux
