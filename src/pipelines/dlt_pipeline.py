@@ -2,28 +2,112 @@ import os
 import logging
 import json
 import dlt
-import time 
+import time
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 from src.sources.api_source import fetch_data_from_api
 from src.sources.database_source import fetch_data_from_database
 from src.sources.storage_source import fetch_data_from_s3
 from src.db.duckdb_connection import execute_query
 
-CONFIG_DIR = os.path.join(os.path.dirname(__file__), "../../config")  # Ensure correct path
-
 # --- Configure Logging ---
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+# --- **Helper Functions** ---
+def get_config_path(filename):
+    """Returns the correct config file path based on environment (Docker vs. local)."""
+    running_in_docker = os.getenv("RUNNING_IN_DOCKER", "").strip().lower()  # Normalize value
+    local_path = os.path.abspath(os.path.join(os.getcwd(), "config", filename))
+    docker_path = f"/app/config/{filename}"
+    
+    logging.info(f"🔍 RUNNING_IN_DOCKER env var: {running_in_docker}")
+    logging.info(f"🔍 Checking if running in Docker: {running_in_docker == 'true'}")
+
+    # Ensure correct behavior
+    if running_in_docker == "true":  # ✅ Explicitly check for "true"
+        logging.info(f"📂 Using Docker path: {docker_path}")
+        return docker_path
+    else:
+        logging.info(f"📂 Using local path: {local_path}")
+        return local_path
 
 
 def load_snowflake_credentials():
-    """Loads Snowflake credentials from the JSON config file."""
-    config_path = os.path.join(CONFIG_DIR, "snowflake_config.json")
-    
+    """Loads Snowflake credentials and ensures the private key path is correctly resolved."""
+    config_path = get_config_path("snowflake_config.json")  # ✅ Use centralized function
+
     if not os.path.exists(config_path):
         logging.error(f"❌ Snowflake config file missing! Expected at: {config_path}")
         return {}
 
     with open(config_path, "r") as f:
-        return json.load(f)  # ✅ Fixed incorrect f()
+        creds = json.load(f)
+
+    logging.info(f"🔍 Loaded Snowflake credentials: { {k: v if k != 'private_key' else 'HIDDEN' for k, v in creds.items()} }")
+
+    # ✅ Fix private_key_path dynamically
+    if creds.get("authenticator") == "snowflake_jwt":
+        original_key_path = creds.get("private_key_path", "/app/config/rsa_key.p8")  # Default Docker path
+        corrected_key_path = get_config_path(os.path.basename(original_key_path))  # ✅ Fix for local vs Docker
+        
+        creds["private_key_path"] = corrected_key_path  # ✅ Override JSON value
+        
+        logging.info(f"🔑 Updated Private key path: {corrected_key_path}")
+
+        # ✅ Check if private key actually exists
+        if not os.path.exists(corrected_key_path):
+            logging.error(f"❌ Private key file missing at {corrected_key_path}!")
+            return {}
+
+        try:
+            with open(corrected_key_path, "rb") as key_file:
+                private_key = serialization.load_pem_private_key(
+                    key_file.read(),
+                    password=None,
+                )
+                creds["private_key"] = private_key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm=serialization.NoEncryption()
+                ).decode("utf-8")  # ✅ Convert bytes to string for Snowflake
+                
+                logging.info("✅ Successfully loaded and embedded private key into credentials.")
+        except Exception as e:
+            logging.error(f"❌ Failed to load private key: {e}")
+            return {}
+
+    return creds
+
+def load_private_key():
+    """Loads the RSA private key in bytes for Snowflake authentication."""
+    key_path = get_config_path("rsa_key.p8")
+    logging.info(f"🔍 Checking for private key at: {key_path}")
+
+    if not os.path.exists(key_path):
+        logging.error(f"❌ Private key file missing! Expected at: {key_path}")
+        return None
+
+    try:
+        with open(key_path, "rb") as key_file:
+            private_key = serialization.load_pem_private_key(
+                key_file.read(),
+                password=None,  # If encrypted, set your passphrase here
+                backend=default_backend()
+            )
+
+        # ✅ Export as bytes in the correct format
+        private_key_bytes = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+
+        logging.info("✅ Successfully loaded private key in correct format.")
+        return private_key_bytes  # ✅ Return the key in bytes (needed for Snowflake)
+    
+    except Exception as e:
+        logging.error(f"❌ Failed to load private key: {e}")
+        return None
 
 
 def set_env_vars(creds, pipeline_name):
@@ -35,13 +119,20 @@ def set_env_vars(creds, pipeline_name):
     env_prefix = pipeline_name.upper()
     os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__ACCOUNT"] = creds.get("account", "")
     os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__USERNAME"] = creds.get("username", "")
-    os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__PASSWORD"] = creds.get("password", "")
     os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__ROLE"] = creds.get("role", "")
     os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__DATABASE"] = creds.get("database", "")
     os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__SCHEMA"] = creds.get("schema", "")
     os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__HOST"] = creds.get("host", "")
     os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__AUTHENTICATOR"] = creds.get("authenticator", "")
     os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__SESSION_KEEP_ALIVE"] = str(creds.get("session_keep_alive", "true")).lower()
+
+    # ✅ Inject the actual private key
+    if creds.get("private_key"):
+        os.environ[f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__PRIVATE_KEY"] = creds["private_key"]
+        logging.info("🔑 Private key successfully set in environment variables.")
+    else:
+        logging.warning("⚠️ Private key not found in credentials.")
+
 
 def log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, event, message, duration=None):
     """Logs pipeline execution details into `pipeline_logs` in DuckDB, ensuring pipeline_id is set."""
@@ -138,17 +229,12 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
         duration = round(time.time() - start_time, 2)
 
         # ✅ Check if data was actually loaded
-        if pipeline.last_trace and pipeline.last_trace.last_normalize_info:
-            row_counts_dict = pipeline.last_trace.last_normalize_info.row_counts
-            total_rows = sum(count for table, count in row_counts_dict.items() if not table.startswith("_dlt_"))
-            logging.info(f"✅ Pipeline `{pipeline_name}` completed in {duration} seconds! Rows Loaded: {total_rows}")
+        row_counts = pipeline.last_trace.last_normalize_info.row_counts if pipeline.last_trace and pipeline.last_trace.last_normalize_info else {}
+        total_rows = sum(count for table, count in row_counts.items() if not table.startswith("_dlt_"))
 
-            log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, "completed", f"Completed in {duration} seconds. Rows Loaded: {total_rows}", duration)
-            return total_rows
-
-        logging.warning(f"⚠️ Pipeline `{pipeline_name}` ran but no rows were loaded.")
-        log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, "completed", f"Completed in {duration} seconds. No rows loaded", duration)
-        return 0
+        logging.info(f"✅ Pipeline `{pipeline_name}` completed in {duration} seconds! Rows Loaded: {total_rows}")
+        log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, "completed", f"Completed in {duration} seconds. Rows Loaded: {total_rows}", duration)
+        return total_rows
 
     except Exception as e:
         duration = round(time.time() - start_time, 2)

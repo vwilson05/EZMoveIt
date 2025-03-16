@@ -19,7 +19,7 @@ packaging==24.2
 pandas==2.2.3
 pillow==11.1.0
 protobuf==5.29.3
-pyarrow==19.0.1
+pyarrow<19.0.0
 pydeck==0.9.1
 python-dateutil==2.9.0.post0
 pytz==2025.1
@@ -44,3 +44,4 @@ pandas
 python-dotenv
 boto3
 google-cloud-storage
+dlt[snowflake]
