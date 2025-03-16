@@ -52,6 +52,11 @@ venv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
+Initialize your duckdb and tables:
+```bash
+python src/db/duckdb_init.py
+```
+
 ---
 
 ### **2️⃣ Configure Snowflake & Data Sources**
