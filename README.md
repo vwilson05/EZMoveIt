@@ -26,7 +26,7 @@ EZMoveIt/
 │   ├── pipelines/        # DLT pipeline execution scripts
 │   ├── sources/          # Data extraction from APIs, databases, and storage
 │   ├── streamlit_app/    # Streamlit UI components
-│       ├── pages/        # Modular Streamlit pages
+│       ├── page-modules/        # Modular Streamlit pages
 │── venv/                 # Virtual environment (ignored in Git)
 │── requirements.txt      # Required dependencies
 │── README.md             # You’re reading this! 😊
@@ -53,6 +53,10 @@ pip install -r requirements.txt
 ```
 
 Initialize your duckdb and tables:
+<<<<<<< HEAD
+=======
+
+>>>>>>> 47197ca (🚀 Dockerized EZMoveIt: Added containerized support + Snowflake key pair auth)
 ```bash
 python src/db/duckdb_init.py
 ```

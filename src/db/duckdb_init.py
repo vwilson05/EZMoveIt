@@ -2,11 +2,11 @@ import duckdb
 import os
 
 # Ensure the data directory exists
-DATA_DIR = os.path.join(os.path.dirname(__file__), '../../data')
+DATA_DIR = os.path.join(os.path.dirname(__file__), "../../data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Define database path
-DB_PATH = os.path.join(DATA_DIR, 'EZMoveIt.duckdb')
+DB_PATH = os.path.join(DATA_DIR, "EZMoveIt.duckdb")
 
 # Connect to DuckDB
 con = duckdb.connect(DB_PATH)

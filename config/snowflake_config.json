@@ -1,7 +1,8 @@
 {
     "account": "XQEFMFM-HAKKODAINC_PARTNER",
     "username": "VICTOR_WILSON@HAKKODA.IO",
-    "authenticator": "externalbrowser",
+    "authenticator": "snowflake_jwt",
+    "private_key_path": "/app/config/rsa_key.p8",
     "role": "SYSADMIN",
     "database": "VICTOR_WILSON_SANDBOX",
     "schema": "",
