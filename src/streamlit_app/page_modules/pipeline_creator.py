@@ -81,8 +81,8 @@ def save_source_config(source_name, config_data):
         json.dump(config_data, f, indent=4)
 
 def pipeline_creator_page():
-    st.title("🚀 Pipeline Creator")
-
+    st.title("🚀 Create a Pipleine")
+    st.markdown("Use this page to create, schedule and run your dlt pipeline.  Fill out your snowflake credentials (which are saved in session), choose your source, define your target options and create the pipeline.")
     st.header("🔐 Snowflake Credentials")
     auth_type = st.selectbox("Authentication Type", options=["Key-Pair (JWT)", "Username/Password"])
     account = st.text_input("Account")
@@ -115,6 +115,7 @@ def pipeline_creator_page():
         }
         st.success("Snowflake credentials saved in session!")
     
+    st.header("🚀  Pipeline Creator")
     # Source configuration.
     available_sources = get_verified_dlt_sources()
     selected_source = st.selectbox("📡 Select Data Source", available_sources)
@@ -168,9 +169,9 @@ def pipeline_creator_page():
         st.success(f"Configuration saved for `{selected_source}`!")
 
     st.subheader("🔄 Pipeline Details")
-    name = st.text_input("Pipeline Name", "new_pipeline")
-    target_table = st.text_input("Target Table Name", "destination_table")
-    dataset_name = st.text_input("Snowflake Schema (Dataset)", "DATA_SCHEMA")
+    name = st.text_input("Pipeline Name", "", placeholder="Give your pipeline a unique name.")
+    dataset_name = st.text_input("Snowflake Schema (Dataset)", "", placeholder="Name of your target schema in Snowflake.")
+    target_table = st.text_input("Target Table Name", "", placeholder="Name of your target table in Snowflake.")
 
     schedule_option = st.radio("Run Mode", ("One-Time Run", "Schedule Recurring Run"))
     start_time = None
@@ -198,7 +199,7 @@ def pipeline_creator_page():
         )
         st.success(f"Pipeline `{name}` created successfully!")
 
-    st.header("📜 Existing Pipelines")
+    st.subheader("📜 Existing Pipelines")
     pipelines = execute_query(
         "SELECT id, name, source_url, snowflake_target, dataset_name, schedule, last_run_status FROM pipelines ORDER BY id DESC",
         fetch=True,
