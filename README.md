@@ -1,10 +1,10 @@
-# **EZMoveIt: Lightweight Data Pipeline Orchestrator 🚀**
+# EZMoveIt: Lightweight Data Pipeline Orchestrator 🚀
 
 EZMoveIt is a **lightweight data ingestion and orchestration tool** built with **Python, Streamlit, and DuckDB**, leveraging **DLT** for seamless extraction and loading into **Snowflake**. It supports multiple **source types** (APIs, databases, cloud storage) and includes scheduling, logging, and metrics tracking.
 
 ---
 
-## **🛠 Features**
+## 🛠 Features
 
 - **🔗 Connect to multiple sources:** REST APIs (public/private), databases (Postgres, MySQL, BigQuery, Redshift, etc.), and S3.
 - **👤 Load data into Snowflake** with automated schema management.
@@ -14,7 +14,7 @@ EZMoveIt is a **lightweight data ingestion and orchestration tool** built with *
 
 ---
 
-## **🛀 Project Structure**
+## 🛀 Project Structure
 
 ```txt
 
@@ -35,9 +35,11 @@ EZMoveIt/
 
 ---
 
-## **🚀 Quickstart Guide**
+## **🚀 Quickstart Guide
 
-### **1️⃣ Install Dependencies**
+### **1️⃣ Run Locally
+
+#### Install Dependencies**
 
 Clone the repo and install required Python packages:
 
@@ -53,24 +55,21 @@ pip install -r requirements.txt
 ```
 
 Initialize your duckdb and tables:
-<<<<<<< HEAD
-=======
 
->>>>>>> 47197ca (🚀 Dockerized EZMoveIt: Added containerized support + Snowflake key pair auth)
 ```bash
 python src/db/duckdb_init.py
 ```
 
 ---
 
-### **2️⃣ Configure Snowflake & Data Sources**
+#### 2️⃣ Configure Snowflake & Data Sources
 
 - **Snowflake:** Add your credentials to `config/snowflake_config.json`  
 - **APIs/Databases:** Configuration files will be automatically created when setting up a new pipeline.
 
 ---
 
-### **3️⃣ Run the Application**
+#### 3️⃣ Run the Application**
 
 Start the Streamlit UI:
 
@@ -82,9 +81,9 @@ Navigate to **`http://localhost:8501`** in your browser.
 
 ---
 
-## **🖥 How to Use**
+### 🖥 How to Use
 
-### **📌 Create a Pipeline**
+#### 📌 Create a Pipeline
 
 1. Go to **Pipeline Creator**.
 2. Select a **Data Source** (API, database, or cloud storage).
@@ -92,7 +91,7 @@ Navigate to **`http://localhost:8501`** in your browser.
 4. Choose **One-Time Run** or **Schedule Recurring Run**.
 5. Click **Create Pipeline**.
 
-### **🚀 Run & Monitor Pipelines**
+#### 🚀 Run & Monitor Pipelines
 
 - **Trigger manually** from the home screen.
 - **View execution logs** in the **Execution Logs** tab.
@@ -100,7 +99,7 @@ Navigate to **`http://localhost:8501`** in your browser.
 
 ---
 
-## **🖥 Supported Sources**
+### 🖥 Supported Sources**
 
 ✅ **REST APIs (Public & Private)**  
 ✅ **Databases:** Postgres, MySQL, SQL Server, BigQuery, Redshift  
@@ -109,7 +108,7 @@ Navigate to **`http://localhost:8501`** in your browser.
 
 ---
 
-## **📚 Documentation & Troubleshooting**
+### 📚 Documentation & Troubleshooting
 
 - **Common Issues:**  
   - Missing dependencies? Run `pip install -r requirements.txt`.
@@ -124,12 +123,12 @@ Navigate to **`http://localhost:8501`** in your browser.
 
 ---
 
-## **🤝 Contributing**
+### 🤝 Contributing
 
 We welcome contributions! Open an issue or PR to improve **EZMoveIt**.
 
 ---
 
-## **🐝 License**
+### 🐝 License**
 
 MIT License © 2025 **Victor Wilson**  
