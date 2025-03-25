@@ -6,8 +6,8 @@ EZMoveIt is a **lightweight data ingestion and orchestration tool** built with *
 
 ## 🛠 Features
 
-- **🔗 Connect to multiple sources:** REST APIs (public/private), databases (Postgres, MySQL, BigQuery, Redshift, etc.), and S3.
-- **👤 Load data into Snowflake** with automated schema management.
+- **🔗 Connect to multiple sources:** REST APIs (public/private), databases (Postgres, MySQL, BigQuery, Redshift, etc.), and S3/ADLS as sources.
+- **👤 Load data into Snowflake** with automated schema management.  More targets coming soon!
 - **🗕 Schedule recurring data loads** or run one-time ingestions.
 - **📊 View execution logs & pipeline metrics** inside the UI.
 - **🔄 Handles schema drift & supports incremental loads** (WIP).
@@ -39,7 +39,7 @@ EZMoveIt/
 
 ### Access in Streamlit Cloud
 
-The app is hosted @ <https://ezmoveit.streamlit.app>.  To run in Streamlit Cloud, you will need to provide your own credentials.  Here's how to do that:
+The app is hosted @ <https://ezmoveit.streamlit.app>.  To run in Streamlit Cloud, you will need to provide your own Snowflake credentials.  Here's how to do that:
 
 - Navigate to <https://ezmoveit.streamlit.app>
 - On the left-hand nav, check the box for "Enter Snowflake Credentials"

@@ -9,35 +9,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 # Set Streamlit page title
 st.set_page_config(page_title="EZMoveIt - Data Pipeline Manager", layout="wide")
 
-# ---- NEW: Credentials Input Form in Sidebar ----
-with st.sidebar.expander("Snowflake Credentials", expanded=False):
-    with st.form(key="snowflake_creds_form"):
-        account = st.text_input("Account")
-        username = st.text_input("Username")
-        authenticator = st.text_input("Authenticator", value="snowflake_jwt")
-        private_key = st.text_area("Private Key (paste PEM formatted key)", height=150)
-        role = st.text_input("Role", value="SYSADMIN")
-        database = st.text_input("Database")
-        schema = st.text_input("Schema")
-        host = st.text_input("Host")
-        session_keep_alive = st.checkbox("Session Keep Alive", value=True)
-        
-        submit_creds = st.form_submit_button(label="Save Credentials")
-        
-        if submit_creds:
-            st.session_state.snowflake_creds = {
-                "account": account,
-                "username": username,
-                "authenticator": authenticator,
-                "private_key": private_key,
-                "role": role,
-                "database": database,
-                "schema": schema,
-                "host": host,
-                "session_keep_alive": session_keep_alive
-            }
-            st.success("Snowflake credentials saved in session!")
-
 # Sidebar navigation
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
