@@ -1,2 +1,3 @@
 app.db
 config/rsa_key.p8
+config/snowflake_config.json
