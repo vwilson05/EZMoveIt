@@ -45,3 +45,4 @@ python-dotenv
 boto3
 google-cloud-storage
 dlt[snowflake]
+matplotlib
