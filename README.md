@@ -42,9 +42,10 @@ EZMoveIt/
 The app is hosted @ <https://ezmoveit.streamlit.app>.  To run in Streamlit Cloud, you will need to provide your own Snowflake credentials.  Here's how to do that:
 
 - Navigate to <https://ezmoveit.streamlit.app>
-- On the left-hand nav, check the box for "Enter Snowflake Credentials"
+- On the Pipeline Builder page, fill out the form for "Enter Snowflake Credentials"
 - Populate the form with your credentials.  Username/Password and key-pair auth are supported.
 - Click "Submit Credentials".  Your credentials will now be used by the app while it is in session, and removed when you leave the app.
+- Use the rest of the app as described below.
 
 ### Run Locally
 
