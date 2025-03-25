@@ -26,6 +26,6 @@ elif page == "Execution Logs":
 elif page == "Pipeline Metrics":
     from src.streamlit_app.page_modules.pipeline_metrics import pipeline_metrics_page
     pipeline_metrics_page()
-# elif page == "Query Data":
-#     from src.streamlit_app.page_modules.query_data import pipeline_query_page
-#     pipeline_query_page()
+elif page == "Query Data":
+    from src.streamlit_app.page_modules.query_data import pipeline_query_page
+    pipeline_query_page()
