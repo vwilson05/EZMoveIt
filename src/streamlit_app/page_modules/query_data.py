@@ -18,12 +18,17 @@ def get_config_path(filename):
 
 def load_snowflake_credentials():
     """
-    Returns Snowflake credentials.
-    Priority: session_state > config file.
+    Loads Snowflake credentials with priority:
+      1. st.session_state
+      2. st.secrets (ideal for Streamlit Cloud)
+      3. Config file
     """
     if "snowflake_creds" in st.session_state:
         logging.info("Using Snowflake credentials from session state.")
         return st.session_state.snowflake_creds
+    elif hasattr(st, "secrets") and st.secrets.get("snowflake"):
+        logging.info("Using Snowflake credentials from st.secrets.")
+        return st.secrets["snowflake"]
     else:
         config_path = get_config_path("snowflake_config.json")
         if not os.path.exists(config_path):
@@ -55,14 +60,13 @@ def load_snowflake_credentials():
                 return {}
         return creds
 
-# Load credentials (session state will take precedence)
+# Load credentials (session_state or st.secrets will be used on Streamlit Cloud)
 creds = load_snowflake_credentials()
 if not creds or (creds.get("authenticator") == "snowflake_jwt" and "private_key" not in creds):
     st.error("❌ Failed to load Snowflake credentials. Check logs for details.")
-    st.stop()
+    # Note: We avoid st.stop() so the error message is rendered
 
 def get_snowflake_connection():
-    """Connects to Snowflake using the credentials (key-pair or username/password)."""
     try:
         if creds.get("authenticator") == "snowflake_jwt":
             return connect(
@@ -89,24 +93,29 @@ def get_snowflake_connection():
     except Exception as e:
         logging.error(f"❌ Snowflake connection failed: {e}")
         st.error("🚨 Could not connect to Snowflake. Check logs for details.")
-        st.stop()
+        return None
 
 def query_data(query):
-    """Executes the given SQL query and returns a DataFrame with the results."""
     conn = get_snowflake_connection()
+    if conn is None:
+        return None
     cur = conn.cursor()
     cur.execute(query)
-    df = pd.DataFrame(cur.fetchall(), columns=[desc[0] for desc in cur.description])
+    data = cur.fetchall()
+    columns = [desc[0] for desc in cur.description]
     cur.close()
     conn.close()
-    return df
+    return pd.DataFrame(data, columns=columns)
 
 def pipeline_query_page():
     st.title("📊 Data Explorer - Snowflake")
     query = st.text_area("📝 Enter SQL Query", "SELECT * FROM DLT_TEST.TODO LIMIT 10")
     if st.button("Run Query"):
         df = query_data(query)
-        st.dataframe(df)
+        if df is not None:
+            st.dataframe(df)
+        else:
+            st.error("Query failed.")
 
 if __name__ == "__main__":
     pipeline_query_page()
