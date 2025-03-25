@@ -16,7 +16,7 @@ EZMoveIt is a **lightweight data ingestion and orchestration tool** built with *
 
 ## 🛀 Project Structure
 
-```txt
+```bash
 
 EZMoveIt/
 │── config/               # Stores connection configs (Snowflake, API keys, etc.)
@@ -35,11 +35,20 @@ EZMoveIt/
 
 ---
 
-## **🚀 Quickstart Guide
+## 🚀 Quickstart Guide
 
-### **1️⃣ Run Locally
+### Access in Streamlit Cloud
 
-#### Install Dependencies**
+The app is hosted @ <https://ezmoveit.streamlit.app>.  To run in Streamlit Cloud, you will need to provide your own credentials.  Here's how to do that:
+
+- Navigate to <https://ezmoveit.streamlit.app>
+- On the left-hand nav, check the box for "Enter Snowflake Credentials"
+- Populate the form with your credentials.  Username/Password and key-pair auth are supported.
+- Click "Submit Credentials".  Your credentials will now be used by the app while it is in session, and removed when you leave the app.
+
+### Run Locally
+
+#### 1️⃣  Install Dependencies**
 
 Clone the repo and install required Python packages:
 
