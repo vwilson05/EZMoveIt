@@ -3,6 +3,7 @@ import threading
 import logging
 import json
 import os
+import time
 from datetime import datetime
 from src.pipelines.dlt_pipeline import run_pipeline_with_creds
 from src.db.duckdb_connection import execute_query
@@ -221,11 +222,38 @@ def pipeline_creator_page():
                         if not creds:
                             st.error("No Snowflake credentials found. Please enter them above.")
                         else:
-                            threading.Thread(
-                                target=run_pipeline_with_creds,
-                                args=(name, dataset, tgt, creds),
-                                daemon=True
-                            ).start()
+                            # Create placeholders for progress and status messages.
+                            progress_placeholder = st.empty()
+                            status_placeholder = st.empty()
+                            
+                            # Use a mutable dict as a container for pipeline status.
+                            result_container = {"status": "Pipeline started...", "result": None}
+                            
+                            def run_pipeline_thread():
+                                result_container["status"] = "Pipeline started..."
+                                res = run_pipeline_with_creds(name, dataset, tgt, creds)
+                                if res is not None:
+                                    result_container["status"] = f"Pipeline completed: {res} rows loaded."
+                                    result_container["result"] = res
+                                else:
+                                    result_container["status"] = "Pipeline failed. Check logs."
+
+                            
+                            # Start the pipeline in a background thread.
+                            pipeline_thread = threading.Thread(target=run_pipeline_thread, daemon=True)
+                            pipeline_thread.start()
+                            
+                            # Simulate a progress update loop until the thread is done.
+                            for i in range(101):
+                                if not pipeline_thread.is_alive():
+                                    progress_placeholder.progress(100)
+                                    break
+                                progress_placeholder.progress(i)
+                                status_placeholder.info(result_container["status"])
+                                time.sleep(0.2)
+                            
+                            # Final update.
+                            status_placeholder.info(result_container["status"])
             st.markdown("---")
     else:
         st.info("No pipelines found. Create one above!")

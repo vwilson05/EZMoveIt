@@ -151,15 +151,11 @@ def log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, 
     logging.info("Logged event `%s` for pipeline `%s` (ID: %s)", event, pipeline_name, pipeline_id)
 
 def run_pipeline_with_creds(pipeline_name: str, dataset_name: str, table_name: str, creds: dict):
-    """
-    Helper function to run the pipeline using the provided credentials.
-    """
     set_env_vars(creds, pipeline_name)
-    # Log key environment variables for debugging.
     env_keys = [
-        "USERNAME", "ROLE", "DATABASE", "HOST", "WAREHOUSE", "SESSION_KEEP_ALIVE", "PASSWORD"
+        "ACCOUNT", "USERNAME", "DATABASE", "SCHEMA", "HOST", "AUTHENTICATOR", "PASSWORD"
     ]
     for key in env_keys:
         full_key = f"{pipeline_name.upper()}__DESTINATION__SNOWFLAKE__CREDENTIALS__{key}"
         logging.info("Env %s = %s", full_key, os.environ.get(full_key))
-    run_pipeline(pipeline_name, dataset_name, table_name)
+    return run_pipeline(pipeline_name, dataset_name, table_name)
