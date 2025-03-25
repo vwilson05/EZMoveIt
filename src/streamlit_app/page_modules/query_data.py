@@ -9,11 +9,16 @@ from cryptography.hazmat.backends import default_backend
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+# Debug: Write initial message
+st.write("Page started - Debug: Beginning execution.")
+
 def get_config_path(filename):
     """Returns the correct config file path based on environment (Docker vs. local)."""
     running_in_docker = os.getenv("RUNNING_IN_DOCKER", "").strip().lower()
     local_path = os.path.abspath(os.path.join(os.getcwd(), "config", filename))
     docker_path = f"/app/config/{filename}"
+    st.write("os.getcwd():", os.getcwd())  # Debug output
+    st.write("Using config path:", docker_path if running_in_docker == "true" else local_path)
     return docker_path if running_in_docker == "true" else local_path
 
 def load_snowflake_credentials():
@@ -25,14 +30,17 @@ def load_snowflake_credentials():
     """
     if "snowflake_creds" in st.session_state:
         logging.info("Using Snowflake credentials from session state.")
+        st.write("Debug: Found creds in session state.")
         return st.session_state.snowflake_creds
     elif hasattr(st, "secrets") and st.secrets.get("snowflake"):
         logging.info("Using Snowflake credentials from st.secrets.")
+        st.write("Debug: Found creds in st.secrets.")
         return st.secrets["snowflake"]
     else:
         config_path = get_config_path("snowflake_config.json")
         if not os.path.exists(config_path):
             logging.error(f"❌ Snowflake config file missing! Expected at: {config_path}")
+            st.error(f"❌ Snowflake config file missing! Expected at: {config_path}")
             return {}
         with open(config_path, "r") as f:
             creds = json.load(f)
@@ -42,6 +50,7 @@ def load_snowflake_credentials():
             creds["private_key_path"] = corrected_key_path
             if not os.path.exists(corrected_key_path):
                 logging.error(f"❌ Private key file missing at {corrected_key_path}!")
+                st.error(f"❌ Private key file missing at {corrected_key_path}!")
                 return {}
             try:
                 with open(corrected_key_path, "rb") as key_file:
@@ -57,14 +66,17 @@ def load_snowflake_credentials():
                     ).decode("utf-8")
             except Exception as e:
                 logging.error(f"❌ Failed to load private key: {e}")
+                st.error(f"❌ Failed to load private key: {e}")
                 return {}
+        st.write("Debug: Loaded creds from config file.")
         return creds
 
-# Load credentials (session_state or st.secrets will be used on Streamlit Cloud)
+# Load credentials (priority: session_state > st.secrets > config file)
 creds = load_snowflake_credentials()
 if not creds or (creds.get("authenticator") == "snowflake_jwt" and "private_key" not in creds):
     st.error("❌ Failed to load Snowflake credentials. Check logs for details.")
-    # Note: We avoid st.stop() so the error message is rendered
+else:
+    st.success("Snowflake credentials loaded successfully.")
 
 def get_snowflake_connection():
     try:
