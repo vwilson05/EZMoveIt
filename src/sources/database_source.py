@@ -44,7 +44,7 @@ def fetch_data_from_database(pipeline_name):
         port = db_config.get("port", 1433 if db_type in ["mssql", "microsoft_sqlserver"] else 5432)
         database = db_config.get("database", "dlt_data")
         if db_type in ["mssql", "microsoft_sqlserver"]:
-            driver = db_config.get("driver", "ODBC+Driver+18+for+SQL+Server")
+            driver = db_config.get("driver", "ODBC+Driver+17+for+SQL+Server")
             conn_str = (
                 f"mssql+pyodbc://{user}:{password}@{host}:{port}/{database}"
                 f"?TrustServerCertificate=yes&driver={driver}"
