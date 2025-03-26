@@ -28,7 +28,6 @@ def set_env_vars(creds, pipeline_name):
 
     env_prefix = pipeline_name.upper()
 
-    # For key-pair (JWT) mode, use private_key; for username/password, include warehouse and password.
     if creds.get("authenticator") == "snowflake_jwt":
         mappings = {
             "USERNAME": "username",
@@ -42,7 +41,6 @@ def set_env_vars(creds, pipeline_name):
             "PRIVATE_KEY": "private_key"
         }
     else:
-        # Username/Password mode: do not set an authenticator or private key.
         mappings = {
             "USERNAME": "username",
             "ROLE": "role",
@@ -58,7 +56,7 @@ def set_env_vars(creds, pipeline_name):
         value = creds.get(cred_key) or ""
         if isinstance(value, bool):
             value = str(value).lower()
-        full_env_key = f"{env_prefix}__DESTINATION__SNOWFLAKE__CREDENTIALS__{env_key}"
+        full_env_key = f"{pipeline_name.upper()}__DESTINATION__SNOWFLAKE__CREDENTIALS__{env_key}"
         os.environ[full_env_key] = value
         if env_key not in ("PASSWORD", "PRIVATE_KEY"):
             logging.info("Set env var %s: %s", full_env_key, value)
@@ -95,22 +93,29 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
     if not result:
         logging.error(f"No source URL found for pipeline `{pipeline_name}`")
         return None
-    source_url = result[0][0]
-    if source_url.startswith("http"):
+
+    # Normalize and log the source URL.
+    source_url = result[0][0].strip()
+    source_url_lower = source_url.lower()
+    logging.info(f"Normalized source URL: {source_url_lower}")
+
+    if source_url_lower.startswith("http"):
         data = fetch_data_from_api(source_url, pipeline_name)
         @dlt.resource(name=table_name, write_disposition="append")
         def api_data_resource():
             yield from data
-    elif source_url.startswith("s3://"):
+    elif source_url_lower.startswith("s3://"):
         data = fetch_data_from_s3(pipeline_name)
-    elif source_url.startswith(("postgres", "mysql", "bigquery", "redshift", "mssql")):
+    elif source_url_lower.startswith(("postgres", "mysql", "bigquery", "redshift", "mssql", "microsoft_sqlserver", "oracle")):
         data = fetch_data_from_database(pipeline_name)
     else:
         logging.error(f"Unsupported source type for URL: {source_url}")
         return None
+
     if not data:
         log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, "error", "No data fetched")
         return None
+
     pipeline = dlt.pipeline(
         pipeline_name=pipeline_name,
         destination="snowflake",
@@ -119,7 +124,7 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
     try:
         start_time = time.time()
         log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, "started", "Pipeline execution started")
-        if source_url.startswith("http"):
+        if source_url_lower.startswith("http"):
             pipeline.run(api_data_resource)
         else:
             pipeline.run(data)

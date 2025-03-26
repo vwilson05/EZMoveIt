@@ -35,6 +35,7 @@ tornado==6.4.2
 typing_extensions==4.12.2
 tzdata==2025.1
 urllib3==2.3.0
+dlt[sql-database]
 dlt
 streamlit
 duckdb
@@ -46,3 +47,4 @@ boto3
 google-cloud-storage
 dlt[snowflake]
 matplotlib
+pyodbc

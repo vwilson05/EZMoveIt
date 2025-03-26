@@ -18,57 +18,58 @@ def get_verified_dlt_sources():
     return [
         "REST API (Public)",
         "REST API (Private)",
-        "airtable",
-        "asana",
-        "bigquery",
-        "braintree",
-        "chargebee",
-        "copper",
-        "dynamodb",
-        "facebook_ads",
-        "freshdesk",
-        "github",
-        "google_analytics",
-        "google_ads",
-        "google_search_console",
-        "greenhouse",
-        "hubspot",
-        "intercom",
-        "jira",
-        "klaviyo",
-        "lever",
-        "linkedin_ads",
-        "microsoft_ads",
+        # "airtable",
+        # "asana",
+        # "bigquery",
+        # "braintree",
+        # "chargebee",
+        # "copper",
+        # "dynamodb",
+        # "facebook_ads",
+        # "freshdesk",
+        # "github",
+        # "google_analytics",
+        # "google_ads",
+        # "google_search_console",
+        # "greenhouse",
+        # "hubspot",
+        # "intercom",
+        # "jira",
+        # "klaviyo",
+        # "lever",
+        # "linkedin_ads",
+        # "microsoft_ads",
         "microsoft_sqlserver",
-        "mixpanel",
-        "monday",
-        "mysql",
-        "notion",
-        "pagerduty",
-        "pendo",
-        "pipedrive",
-        "postgres",
-        "quickbooks",
-        "recharge",
-        "redshift",
-        "s3",
-        "salesforce",
-        "sendgrid",
-        "shopify",
-        "slack",
-        "snapchat_ads",
-        "snowflake",
-        "square",
-        "stripe",
-        "tempo",
-        "todoist",
-        "twilio",
-        "twitter",
-        "woocomerce",
-        "xero",
-        "yandex_metrica",
-        "zendesk",
-        "zoho_crm",
+        "oracle",
+        # "mixpanel",
+        # "monday",
+        # "mysql",
+        # "notion",
+        # "pagerduty",
+        # "pendo",
+        # "pipedrive",
+        # "postgres",
+        # "quickbooks",
+        # "recharge",
+        # "redshift",
+        # "s3",
+        # "salesforce",
+        # "sendgrid",
+        # "shopify",
+        # "slack",
+        # "snapchat_ads",
+        # "snowflake",
+        # "square",
+        # "stripe",
+        # "tempo",
+        # "todoist",
+        # "twilio",
+        # "twitter",
+        # "woocomerce",
+        # "xero",
+        # "yandex_metrica",
+        # "zendesk",
+        # "zoho_crm",
     ]
 
 def get_next_pipeline_id():
@@ -87,18 +88,19 @@ def pipeline_creator_page():
     
     st.header("🔐 Snowflake Credentials")
     auth_type = st.selectbox("Authentication Type", options=["Key-Pair (JWT)", "Username/Password"])
-    account = st.text_input("Account")
-    username = st.text_input("Username")
+    # Default credentials for testing
+    account = st.text_input("Account", placeholder="Your snowflake account identifier.")
+    username = st.text_input("Username", placeholder="Your snowflake username.")
     if auth_type == "Key-Pair (JWT)":
         authenticator = "snowflake_jwt"
         private_key = st.text_area("Private Key (paste PEM formatted key)", height=150)
         password = ""  # Not used in JWT mode.
     else:
         authenticator = ""
-        password = st.text_input("Password", type="password")
+        password = st.text_input("Password", placeholder="Your snowflake password.", type="password")
         private_key = ""
-    role = st.text_input("Role", value="SYSADMIN")
-    database = st.text_input("Database")
+    role = st.text_input("Role", placeholder="Your preferred snowflake role.")
+    database = st.text_input("Database", placeholder="Your Snowflake target database.")
     session_keep_alive = st.checkbox("Session Keep Alive", value=True)
 
     if st.button("Save Snowflake Credentials"):
@@ -110,7 +112,7 @@ def pipeline_creator_page():
             "password": password,
             "role": role,
             "database": database,
-            "schema": "",
+            "schema": "",  # This field may be used by the dlt pipeline as needed.
             "host": account,
             "warehouse": "",
             "session_keep_alive": session_keep_alive
@@ -139,14 +141,40 @@ def pipeline_creator_page():
             """,
             height=150,
         )
-    elif selected_source in ["postgres", "mysql", "bigquery", "redshift", "microsoft_sqlserver"]:
+    elif selected_source == "oracle":
         source_config = {}
         source_config["host"] = st.text_input("Host", "localhost")
-        source_config["port"] = st.number_input("Port", min_value=1, max_value=65535, value=5432)
+        source_config["port"] = st.number_input("Port", min_value=1, max_value=65535, value=1521)
         source_config["user"] = st.text_input("User", "admin")
-        source_config["password"] = st.text_input("Password", type="password")
-        source_config["database"] = st.text_input("Database Name", "my_database")
-        source_url = ""
+        source_config["password"] = st.text_input("Password", type="password", key="oracle_db_password")
+        source_config["service_name"] = st.text_input("Service Name", "orcl")
+        source_config["schema"] = st.text_input("Schema Name", "MY_SCHEMA")
+        source_config["db_type"] = "oracle"
+        mode = st.radio("Mode", options=["Single Table", "Entire Database"], index=0)
+        if mode == "Single Table":
+            table = st.text_input("Source Table Name", "CUSTOMERS")
+            source_config["mode"] = "sql_table"
+            source_config["table"] = table
+        else:
+            source_config["mode"] = "sql_database"
+        source_url = f"oracle://{source_config['host']}:{source_config['port']}/{source_config.get('service_name','')}"
+    elif selected_source in ["postgres", "mysql", "bigquery", "redshift", "microsoft_sqlserver"]:
+        source_config = {}
+        source_config["host"] = st.text_input("Host", placeholder="The hostname of your server.")
+        source_config["port"] = st.number_input("Port", min_value=1, max_value=65535, value=1433, placeholder="The port number (ie 1433).")
+        source_config["user"] = st.text_input("User", placeholder="Your sql server user.")
+        source_config["password"] = st.text_input("Password", type="password", key="db_pass", placeholder="Your sql server password.")
+        source_config["database"] = st.text_input("Database Name", placeholder="The SQL Server database name.")
+        source_config["schema"] = st.text_input("Schema Name", placeholder="The SQL Server schema name.")
+        source_config["db_type"] = selected_source
+        mode = st.radio("Mode", options=["Single Table", "Entire Schema"], index=0)
+        if mode == "Single Table":
+            table = st.text_input("Source Table Name", placeholder="The SQL Server table you want to load.")
+            source_config["mode"] = "sql_table"
+            source_config["table"] = table
+        else:
+            source_config["mode"] = "sql_database"
+        source_url = f"{selected_source}://{source_config['host']}:{source_config['port']}/{source_config.get('database','')}"
     elif selected_source == "s3":
         source_config = {}
         source_config["bucket_name"] = st.text_input("S3 Bucket Name")
@@ -165,11 +193,10 @@ def pipeline_creator_page():
         source_url = ""
 
     st.subheader("🔄 Pipeline Details")
-    name = st.text_input("Pipeline Name", "", placeholder="Give your pipeline a unique name.")
-    # Save pipeline name in session to be reused in config if needed.
+    name = st.text_input("Pipeline Name", placeholder="Give your pipeline a unique name.")
     st.session_state.pipeline_name = name
-    dataset_name = st.text_input("Snowflake Schema (Dataset)", "", placeholder="Name of your target schema in Snowflake.")
-    target_table = st.text_input("Target Table Name", "", placeholder="Name of your target table in Snowflake.")
+    dataset_name = st.text_input("Snowflake Schema (Dataset)", placeholder="Name of your target schema in Snowflake.")
+    target_table = st.text_input("Target Table Name", placeholder="Name of your target table in Snowflake.")
 
     schedule_option = st.radio("Run Mode", ("One-Time Run", "Schedule Recurring Run"))
     start_time = None
@@ -199,7 +226,11 @@ def pipeline_creator_page():
             except json.JSONDecodeError:
                 st.error("Invalid JSON format in Authentication Headers")
                 st.stop()  # Stop pipeline creation if the config is invalid
-
+        elif selected_source in ["oracle", "postgres", "mysql", "bigquery", "redshift", "microsoft_sqlserver"]:
+            # Save the source configuration for database sources
+            config_key = name if name else selected_source
+            save_source_config(config_key, source_config)
+            st.info(f"Configuration saved for `{config_key}`!")
         schedule_type = "Scheduled" if schedule_option == "Schedule Recurring Run" else "One-Time"
         pipeline_id = get_next_pipeline_id()
         execute_query(
