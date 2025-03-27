@@ -1,4 +1,3 @@
-# pipeline_creator.py
 import streamlit as st
 import threading
 import logging
@@ -18,58 +17,8 @@ def get_verified_dlt_sources():
     return [
         "REST API (Public)",
         "REST API (Private)",
-        # "airtable",
-        # "asana",
-        # "bigquery",
-        # "braintree",
-        # "chargebee",
-        # "copper",
-        # "dynamodb",
-        # "facebook_ads",
-        # "freshdesk",
-        # "github",
-        # "google_analytics",
-        # "google_ads",
-        # "google_search_console",
-        # "greenhouse",
-        # "hubspot",
-        # "intercom",
-        # "jira",
-        # "klaviyo",
-        # "lever",
-        # "linkedin_ads",
-        # "microsoft_ads",
         "microsoft_sqlserver",
         "oracle",
-        # "mixpanel",
-        # "monday",
-        # "mysql",
-        # "notion",
-        # "pagerduty",
-        # "pendo",
-        # "pipedrive",
-        # "postgres",
-        # "quickbooks",
-        # "recharge",
-        # "redshift",
-        # "s3",
-        # "salesforce",
-        # "sendgrid",
-        # "shopify",
-        # "slack",
-        # "snapchat_ads",
-        # "snowflake",
-        # "square",
-        # "stripe",
-        # "tempo",
-        # "todoist",
-        # "twilio",
-        # "twitter",
-        # "woocomerce",
-        # "xero",
-        # "yandex_metrica",
-        # "zendesk",
-        # "zoho_crm",
     ]
 
 def get_next_pipeline_id():
@@ -87,37 +36,51 @@ def pipeline_creator_page():
     st.markdown("Use this page to create, schedule and run your dlt pipeline. Fill out your Snowflake credentials, choose your source, and create the pipeline.")
     
     st.header("🔐 Snowflake Credentials")
-    auth_type = st.selectbox("Authentication Type", options=["Key-Pair (JWT)", "Username/Password"])
-    # Default credentials for testing
-    account = st.text_input("Account", placeholder="Your snowflake account identifier.")
-    username = st.text_input("Username", placeholder="Your snowflake username.")
-    if auth_type == "Key-Pair (JWT)":
-        authenticator = "snowflake_jwt"
-        private_key = st.text_area("Private Key (paste PEM formatted key)", height=150)
-        password = ""  # Not used in JWT mode.
+    
+    # Add a checkbox to toggle between JSON paste mode and individual fields
+    use_json = st.checkbox("Paste JSON credentials", value=False)
+    
+    if use_json:
+        json_creds = st.text_area("Paste Snowflake Credentials JSON", height=150, 
+            placeholder='{\n  "account": "YOUR_ACCOUNT",\n  "host": "YOUR_ACCOUNT",\n "username": "YOUR_USERNAME",\n  "password": "YOUR_PASSWORD",\n  "role": "YOUR_ROLE",\n  "database": "YOUR_DATABASE",\n  "session_keep_alive": true\n}')
+        if st.button("Save Snowflake Credentials from JSON"):
+            try:
+                creds = json.loads(json_creds)
+                st.session_state.snowflake_creds = creds
+                st.success("Snowflake credentials saved from JSON!")
+            except json.JSONDecodeError as e:
+                st.error(f"Error parsing JSON: {e}")
     else:
-        authenticator = ""
-        password = st.text_input("Password", placeholder="Your snowflake password.", type="password")
-        private_key = ""
-    role = st.text_input("Role", placeholder="Your preferred snowflake role.")
-    database = st.text_input("Database", placeholder="Your Snowflake target database.")
-    session_keep_alive = st.checkbox("Session Keep Alive", value=True)
-
-    if st.button("Save Snowflake Credentials"):
-        st.session_state.snowflake_creds = {
-            "account": account,
-            "username": username,
-            "authenticator": authenticator,
-            "private_key": private_key,
-            "password": password,
-            "role": role,
-            "database": database,
-            "schema": "",  # This field may be used by the dlt pipeline as needed.
-            "host": account,
-            "warehouse": "",
-            "session_keep_alive": session_keep_alive
-        }
-        st.success("Snowflake credentials saved in session!")
+        auth_type = st.selectbox("Authentication Type", options=["Key-Pair (JWT)", "Username/Password"])
+        account = st.text_input("Account", placeholder="Your Snowflake account identifier.")
+        username = st.text_input("Username", placeholder="Your Snowflake username.")
+        if auth_type == "Key-Pair (JWT)":
+            authenticator = "snowflake_jwt"
+            private_key = st.text_area("Private Key (paste PEM formatted key)", height=150)
+            password = ""  # Not used in JWT mode.
+        else:
+            authenticator = ""
+            password = st.text_input("Password", placeholder="Your Snowflake password.", type="password")
+            private_key = ""
+        role = st.text_input("Role", placeholder="Your preferred Snowflake role.")
+        database = st.text_input("Database", placeholder="Your Snowflake target database.")
+        session_keep_alive = st.checkbox("Session Keep Alive", value=True)
+        # Save credentials if user clicks the button
+        if st.button("Save Snowflake Credentials"):
+            st.session_state.snowflake_creds = {
+                "account": account,
+                "username": username,
+                "authenticator": authenticator,
+                "private_key": private_key,
+                "password": password,
+                "role": role,
+                "database": database,
+                "schema": "",  # This field may be used by the dlt pipeline as needed.
+                "host": account,
+                "warehouse": "",
+                "session_keep_alive": session_keep_alive
+            }
+            st.success("Snowflake credentials saved in session!")
     
     st.header("🚀 Pipeline Creator")
     # Source configuration.
@@ -161,9 +124,9 @@ def pipeline_creator_page():
     elif selected_source in ["postgres", "mysql", "bigquery", "redshift", "microsoft_sqlserver"]:
         source_config = {}
         source_config["host"] = st.text_input("Host", placeholder="The hostname of your server.")
-        source_config["port"] = st.number_input("Port", min_value=1, max_value=65535, value=1433, placeholder="The port number (ie 1433).")
-        source_config["user"] = st.text_input("User", placeholder="Your sql server user.")
-        source_config["password"] = st.text_input("Password", type="password", key="db_pass", placeholder="Your sql server password.")
+        source_config["port"] = st.number_input("Port", min_value=1, max_value=65535, value=1433, placeholder="The port number (e.g., 1433).")
+        source_config["user"] = st.text_input("User", placeholder="Your SQL Server user.")
+        source_config["password"] = st.text_input("Password", type="password", key="db_pass", placeholder="Your SQL Server password.")
         source_config["database"] = st.text_input("Database Name", placeholder="The SQL Server database name.")
         source_config["schema"] = st.text_input("Schema Name", placeholder="The SQL Server schema name.")
         source_config["db_type"] = selected_source
@@ -219,15 +182,13 @@ def pipeline_creator_page():
             try:
                 parsed_auth_config = json.loads(auth_config)
                 source_config = {"auth": parsed_auth_config}
-                # Use the pipeline name as the key; if missing, fall back to the source label
                 config_key = name if name else selected_source
                 save_source_config(config_key, source_config)
                 st.info(f"Configuration saved for `{config_key}`!")
             except json.JSONDecodeError:
                 st.error("Invalid JSON format in Authentication Headers")
-                st.stop()  # Stop pipeline creation if the config is invalid
+                st.stop()
         elif selected_source in ["oracle", "postgres", "mysql", "bigquery", "redshift", "microsoft_sqlserver"]:
-            # Save the source configuration for database sources
             config_key = name if name else selected_source
             save_source_config(config_key, source_config)
             st.info(f"Configuration saved for `{config_key}`!")
