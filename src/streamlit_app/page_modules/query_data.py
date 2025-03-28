@@ -65,13 +65,15 @@ if not creds or (creds.get("authenticator") == "snowflake_jwt" and "private_key"
 
 def get_snowflake_connection():
     try:
+        # Use session state creds and provide a default schema if missing.
+        schema = creds.get("schema", "PUBLIC")
         if creds.get("authenticator") == "snowflake_jwt":
             return connect(
                 user=creds["username"],
                 account=creds["account"],
                 role=creds["role"],
                 database=creds["database"],
-                schema=creds["schema"],
+                schema=schema,
                 private_key=serialization.load_pem_private_key(
                     creds["private_key"].encode("utf-8"),
                     password=None,
@@ -85,7 +87,7 @@ def get_snowflake_connection():
                 account=creds["account"],
                 role=creds["role"],
                 database=creds["database"],
-                schema=creds["schema"]
+                schema=schema
             )
     except Exception as e:
         st.error("Could not connect to Snowflake. Check logs for details.")
