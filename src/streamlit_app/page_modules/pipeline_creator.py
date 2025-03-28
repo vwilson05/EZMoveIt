@@ -234,21 +234,34 @@ def pipeline_creator_page():
             df["schema_name"] = df["schema_name"].astype(str)
             
             available_source_types = sorted(df["source_type"].unique())
-            selected_source_type = st.selectbox("Filter by Source Type", options=available_source_types)
-            available_logical_names = sorted(df["logical_name"].unique())
-            selected_logical_name = st.selectbox("Filter by Logical Name", options=available_logical_names)
-            
-            filtered_df = df[
-                (df["source_type"] == selected_source_type) & 
-                (df["logical_name"] == selected_logical_name)
-            ]
+            selected_source_type = st.selectbox("Filter by Source Type", options=available_source_types, index=0)
+
+            # Filter df by selected source type first
+            df_source = df[df["source_type"] == selected_source_type]
+
+            available_logical_names = sorted(df_source["logical_name"].unique())
+            if available_logical_names:
+                selected_logical_name = st.selectbox("Filter by Logical Name", options=available_logical_names, index=0)
+            else:
+                selected_logical_name = ""
+
+            # Now filter by both source type and logical name
+            filtered_df = df_source[df_source["logical_name"] == selected_logical_name]
             
             available_databases = sorted(filtered_df["database_name"].unique())
-            selected_database = st.selectbox("Select Database", options=available_databases)
+            if available_databases:
+                # Automatically select the first available database (index 0)
+                selected_database = st.selectbox("Select Database", options=available_databases, index=0)
+            else:
+                selected_database = ""
             df_db = filtered_df[filtered_df["database_name"] == selected_database]
             
             available_schemas = sorted(df_db["schema_name"].unique())
-            selected_schema = st.selectbox("Select Schema", options=available_schemas)
+            if available_schemas:
+                # Automatically select the first available schema (index 0)
+                selected_schema = st.selectbox("Select Schema", options=available_schemas, index=0)
+            else:
+                selected_schema = ""
             df_schema = df_db[df_db["schema_name"] == selected_schema]
             
             available_tables = sorted(df_schema["table_name"].unique())
@@ -338,7 +351,7 @@ def pipeline_creator_page():
                         "delta_value": configs_to_save["INCR"].get("delta_value", "")
                     })
             default_pipeline_name = default_pipeline_name.replace(",", "_").replace(" ", "_")
-            default_dataset_name = f"{selected_database.upper()}_{selected_schema.upper()}" if selected_source_type.lower() not in ["api-public", "rest api-public", "api-private", "rest-api-private"] else selected_database.upper()
+            default_dataset_name = f"{selected_database.upper()}_{selected_schema.upper()}" if selected_source_type.lower() not in ["api-public", "rest-api-public", "api-private", "rest-api-private"] else selected_database.upper()
             source_config = common_config.copy()
             
             if selected_source_type.lower() in ["api-public", "rest api-public", "api-private", "rest-api-private"]:
