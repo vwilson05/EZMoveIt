@@ -130,17 +130,22 @@ def pipeline_creator_page():
             source_config["port"] = st.number_input("Port", min_value=1, max_value=65535, value=1521)
             source_config["user"] = st.text_input("User", "admin")
             source_config["password"] = st.text_input("Password", type="password", key="oracle_db_password")
-            source_config["service_name"] = st.text_input("Service Name", "orcl")
-            source_config["schema"] = st.text_input("Schema Name", "MY_SCHEMA")
+            # Use one input for database/service_name; they will be the same.
+            database_input = st.text_input("Database / Service Name", "orcl")
+            source_config["database"] = database_input
+            source_config["service_name"] = database_input  # Reuse as service_name
+            source_config["schema"] = st.text_input("Schema Name", "my_schema")
             source_config["db_type"] = "oracle"
             mode_val = st.radio("Mode", options=["Single Table", "Entire Database"], index=0)
             if mode_val == "Single Table":
-                table = st.text_input("Source Table Name", "CUSTOMERS")
+                table = st.text_input("Source Table Name", "customers")
                 source_config["mode"] = "sql_table"
-                source_config["table"] = table
+                # Lowercase the table name for Oracle consistency.
+                source_config["table"] = table.lower()
             else:
                 source_config["mode"] = "sql_database"
             source_url = f"oracle://{source_config['host']}:{source_config['port']}/{source_config.get('service_name','')}"
+
         elif selected_source in ["postgres", "mysql", "bigquery", "redshift", "microsoft_sqlserver"]:
             source_config = {}
             source_config["host"] = st.text_input("Host", placeholder="The hostname of your server.")
@@ -252,6 +257,9 @@ def pipeline_creator_page():
                             if selected_source_type.lower() in ["sql server", "microsoft sqlserver"] 
                             else selected_source_type.lower()
             }
+            # For Oracle, add service_name (using the database value) and ensure table names are lowercase.
+            if selected_source_type.lower() == "oracle":
+                common_config["service_name"] = selected_database
             
             configs_to_save = {}
             if full_tables:
