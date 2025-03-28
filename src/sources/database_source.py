@@ -45,7 +45,7 @@ def fetch_data_from_database(pipeline_name):
         user = db_config.get("user", "loader")
         password = db_config.get("password", "loader")
         host = db_config.get("host", "localhost")
-        port = db_config.get("port", 1433 if db_type in ["mssql", "microsoft_sqlserver"] else 5432)
+        port = db_config.get("port", 1433 if db_type in ["mssql", "microsoft_sqlserver"] else 1521)
         database = db_config.get("database", "dlt_data")
         if db_type in ["mssql", "microsoft_sqlserver"]:
             driver = db_config.get("driver", "ODBC+Driver+17+for+SQL+Server")
@@ -56,7 +56,7 @@ def fetch_data_from_database(pipeline_name):
             logging.info(f"Built SQL Server connection string: {conn_str}")
         elif db_type == "oracle":
             service_name = db_config.get("service_name", "orcl")
-            conn_str = f"oracle+cx_oracle://{user}:{password}@{host}:{port}/?service_name={service_name}"
+            conn_str = f"oracle+oracledb://{user}:{password}@{host}:{port}/?service_name={service_name}"
             logging.info(f"Built Oracle connection string: {conn_str}")
         else:
             conn_str = f"postgresql://{user}:{password}@{host}:{port}/{database}"
