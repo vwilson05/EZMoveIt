@@ -1,4 +1,6 @@
 config/rsa_key.p8
-config/snowflake_config.json
 config/config.json
 .vscode
+*config.json
+*.pyc
+__pycache__/

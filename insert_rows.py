@@ -21,6 +21,7 @@ customers = Table("customers", metadata,
     Column("Email", String(100)),
     Column("Phone", String(20)),
     Column("CreatedAt", DateTime),
+    Column("UPDATED_DT", DateTime),
     schema="retail_demo"  # Adjust if your table is in a different schema.
 )
 
@@ -47,7 +48,8 @@ for i in range(total_rows):
         "LastName": last,
         "Email": random_email(first, last),
         "Phone": random_phone(),
-        "Created_at": datetime.datetime.now()
+        "Created_at": datetime.datetime.now(),
+        "UPDATED_DT": datetime.datetime.now()
     }
     rows.append(row)
 

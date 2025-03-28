@@ -1,17 +1,18 @@
 import os
 import json
-import time
+from datetime import datetime
 import logging
 import dlt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 
 from src.sources.api_source import fetch_data_from_api
-from src.sources.database_source import fetch_data_from_database
+from src.sources.database_source import fetch_data_from_database, load_db_config
 from src.sources.storage_source import fetch_data_from_s3
 from src.db.duckdb_connection import execute_query
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
 
 def get_config_path(filename):
     running_in_docker = os.getenv("RUNNING_IN_DOCKER", "").strip().lower()
@@ -19,6 +20,7 @@ def get_config_path(filename):
     docker_path = f"/app/config/{filename}"
     logging.info(f"RUNNING_IN_DOCKER: {running_in_docker}")
     return docker_path if running_in_docker == "true" else local_path
+
 
 def set_env_vars(creds, pipeline_name):
     """Sets Snowflake credentials as environment variables dynamically."""
@@ -74,6 +76,7 @@ def set_env_vars(creds, pipeline_name):
         else:
             logging.warning("Password not found in credentials.")
 
+
 def load_snowflake_credentials():
     try:
         import streamlit as st
@@ -88,33 +91,47 @@ def load_snowflake_credentials():
         logging.error("Error loading credentials: %s", e)
         return {}
 
+
 def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
     result = execute_query("SELECT source_url FROM pipelines WHERE name = ?", (pipeline_name,), fetch=True)
     if not result:
         logging.error(f"No source URL found for pipeline `{pipeline_name}`")
         return None
 
-    # Normalize and log the source URL.
     source_url = result[0][0].strip()
     source_url_lower = source_url.lower()
     logging.info(f"Normalized source URL: {source_url_lower}")
 
     if source_url_lower.startswith("http"):
         data = fetch_data_from_api(source_url, pipeline_name)
+
         @dlt.resource(name=table_name, write_disposition="append")
         def api_data_resource():
             yield from data
+
+        data_to_run = api_data_resource
     elif source_url_lower.startswith("s3://"):
         data = fetch_data_from_s3(pipeline_name)
-    elif source_url_lower.startswith(("postgres", "mysql", "bigquery", "redshift", "mssql", "microsoft_sqlserver", "oracle")):
-        data = fetch_data_from_database(pipeline_name)
+        data_to_run = data
+    elif source_url_lower.startswith(
+        ("postgres", "mysql", "bigquery", "redshift", "mssql", "microsoft_sqlserver", "oracle")
+    ):
+        data_to_run = fetch_data_from_database(pipeline_name)
     else:
         logging.error(f"Unsupported source type for URL: {source_url}")
         return None
 
-    if not data:
+    if not data_to_run:
         log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, "error", "No data fetched")
         return None
+
+    # Determine write disposition based on config incremental_type:
+    db_config = load_db_config(pipeline_name)
+    incremental_type = db_config.get("incremental_type", "FULL").upper()
+    if incremental_type == "FULL":
+        write_disposition = "replace"
+    else:  # "INCREMENTAL"
+        write_disposition = "merge"
 
     pipeline = dlt.pipeline(
         pipeline_name=pipeline_name,
@@ -122,25 +139,42 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
         dataset_name=dataset_name
     )
     try:
-        start_time = time.time()
-        log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, "started", "Pipeline execution started")
-        if source_url_lower.startswith("http"):
-            pipeline.run(api_data_resource)
-        else:
-            pipeline.run(data)
-        duration = round(time.time() - start_time, 2)
-        row_counts = pipeline.last_trace.last_normalize_info.row_counts if pipeline.last_trace and pipeline.last_trace.last_normalize_info else {}
+        start_time = datetime.now()
+        log_pipeline_execution(
+            pipeline_name, table_name, dataset_name, source_url,
+            "started", "Pipeline execution started", start_time=start_time
+        )
+
+        # Pass write_disposition when running the pipeline
+        pipeline.run(data_to_run, write_disposition=write_disposition)
+
+        end_time = datetime.now()
+        duration = round((end_time - start_time).total_seconds(), 2)
+        trace = pipeline.last_trace
+        row_counts = trace.last_normalize_info.row_counts if trace and trace.last_normalize_info else {}
         total_rows = sum(count for table, count in row_counts.items() if not table.startswith("_dlt_"))
         logging.info(f"Pipeline `{pipeline_name}` completed in {duration} seconds! Rows Loaded: {total_rows}")
-        log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, "completed", f"Completed in {duration} seconds. Rows Loaded: {total_rows}", duration)
+
+        log_pipeline_execution(
+            pipeline_name, table_name, dataset_name, source_url,
+            "completed", f"Completed in {duration} seconds. Rows Loaded: {total_rows}",
+            start_time=start_time, end_time=end_time, trace=trace
+        )
         return total_rows
     except Exception as e:
-        duration = round(time.time() - start_time, 2)
+        end_time = datetime.now()
+        duration = round((end_time - start_time).total_seconds(), 2)
         logging.error(f"Pipeline execution failed in {duration} seconds: {str(e)}")
-        log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, "error", f"Failed in {duration} seconds: {str(e)}", duration)
+        trace_obj = pipeline.last_trace if hasattr(pipeline, "last_trace") else None
+        log_pipeline_execution(
+            pipeline_name, table_name, dataset_name, source_url,
+            "error", f"Failed in {duration} seconds: {str(e)}",
+            start_time=start_time, end_time=end_time, trace=trace_obj
+        )
         return None
 
-def log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, event, message, duration=None):
+
+def log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, event, message, start_time=None, end_time=None, trace=None):
     result = execute_query("SELECT id FROM pipelines WHERE name = ?", (pipeline_name,), fetch=True)
     if not result:
         logging.error(f"No matching pipeline ID found for `{pipeline_name}`. Log entry skipped.")
@@ -148,12 +182,47 @@ def log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, 
     pipeline_id = result[0][0]
     log_result = execute_query("SELECT MAX(id) FROM pipeline_logs", fetch=True)
     next_id = (log_result[0][0] + 1) if log_result and log_result[0][0] else 1
+
+    # Compute overall duration if start and end times are provided.
+    duration_val = None
+    if start_time and end_time:
+        duration_val = (end_time - start_time).total_seconds()
+
+    row_counts = None
+    trace_json = None
+    extract_info = normalize_info = load_info = "N/A"
+
+    if trace:
+        try:
+            extract_info = str(trace.last_extract_info) if trace.last_extract_info else "N/A"
+            normalize_info = str(trace.last_normalize_info) if trace.last_normalize_info else "N/A"
+            load_info = str(trace.last_load_info) if trace.last_load_info else "N/A"
+            row_counts_dict = trace.last_normalize_info.row_counts if trace.last_normalize_info else {}
+            row_counts = json.dumps(row_counts_dict)
+            trace_json = str(trace)
+        except Exception as e:
+            logging.warning(f"Failed to extract trace info: {e}")
+
+    extended_message = (
+        f"{message}\nExtract Info: {extract_info}\nNormalize Info: {normalize_info}\nLoad Info: {load_info}"
+    )
+
     query = """
-    INSERT INTO pipeline_logs (id, pipeline_id, pipeline_name, source_url, snowflake_target, dataset_name, event, log_message, duration)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO pipeline_logs (
+        id, pipeline_id, pipeline_name, source_url, snowflake_target, dataset_name,
+        event, log_message, duration, start_time, end_time, row_counts, full_trace_json
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
-    execute_query(query, (next_id, pipeline_id, pipeline_name, source_url, table_name, dataset_name, event, message, duration))
+    execute_query(query, (
+        next_id, pipeline_id, pipeline_name, source_url, table_name, dataset_name,
+        event, extended_message, duration_val,
+        start_time.isoformat() if start_time else None,
+        end_time.isoformat() if end_time else None,
+        row_counts, trace_json
+    ))
     logging.info("Logged event `%s` for pipeline `%s` (ID: %s)", event, pipeline_name, pipeline_id)
+
 
 def run_pipeline_with_creds(pipeline_name: str, dataset_name: str, table_name: str, creds: dict):
     set_env_vars(creds, pipeline_name)

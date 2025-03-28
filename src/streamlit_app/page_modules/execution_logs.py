@@ -6,8 +6,8 @@ def fetch_execution_logs():
     """Retrieve execution logs from DuckDB, including all relevant fields."""
     query = """
     SELECT id, pipeline_id, pipeline_name, source_url, snowflake_target, dataset_name,
-           event, timestamp, log_message
-    FROM pipeline_logs ORDER BY timestamp DESC
+           event, created_at, log_message
+    FROM pipeline_logs ORDER BY created_at DESC
     """
     return execute_query(query, fetch=True)
 

@@ -18,10 +18,10 @@ from src.db.duckdb_connection import execute_query
 def fetch_pipeline_metrics():
     """Retrieve and parse pipeline execution logs from DuckDB."""
     query = """
-    SELECT pipeline_name, source_url, snowflake_target, event, timestamp, log_message, duration
+    SELECT pipeline_name, source_url, snowflake_target, event, created_at, log_message, duration
     FROM pipeline_logs 
     WHERE event in ('completed', 'failed')
-    ORDER BY timestamp DESC
+    ORDER BY created_at DESC
     """
     logs = execute_query(query, fetch=True)
 

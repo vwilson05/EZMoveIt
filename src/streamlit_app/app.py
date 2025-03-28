@@ -13,7 +13,7 @@ st.set_page_config(page_title="EZMoveIt - Data Pipeline Manager", layout="wide")
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Select a Page:",
-    ["Pipeline Creator", "Execution Logs", "Pipeline Metrics", "Query Data"],
+    ["Pipeline Creator", "Execution Logs", "Pipeline Metrics", "Query Data", "Monitoring Dashboard"],
 )
 
 # Load the correct page
@@ -29,3 +29,6 @@ elif page == "Pipeline Metrics":
 elif page == "Query Data":
     from src.streamlit_app.page_modules.query_data import pipeline_query_page
     pipeline_query_page()
+elif page == "Monitoring Dashboard":
+    from src.streamlit_app.page_modules.monitoring_dashboard import monitoring_dashboard_page
+    monitoring_dashboard_page()
