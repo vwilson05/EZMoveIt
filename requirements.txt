@@ -48,4 +48,4 @@ google-cloud-storage
 dlt[snowflake]
 matplotlib
 pyodbc
-oracleb
+oracledb
