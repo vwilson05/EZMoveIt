@@ -4,6 +4,7 @@ from datetime import datetime
 import logging
 import dlt
 import pendulum
+import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 
@@ -11,6 +12,26 @@ from src.sources.api_source import fetch_data_from_api, load_api_config, get_api
 from src.sources.database_source import fetch_data_from_database, load_db_config
 from src.sources.storage_source import fetch_data_from_s3
 from src.db.duckdb_connection import execute_query
+from config.slack_config import load_slack_config
+
+load_slack_config()
+
+def send_slack_message(message: str):
+    """Sends a Slack message using the SLACK_WEBHOOK_URL environment variable."""
+    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+    if not webhook_url:
+        logging.warning("SLACK_WEBHOOK_URL is not set. Skipping Slack notification.")
+        return
+    payload = {"text": message}
+    try:
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        if response.status_code != 200:
+            logging.error("Failed to send Slack message: %s", response.text)
+        else:
+            logging.info("Slack message sent successfully.")
+    except Exception as e:
+        logging.error("Exception sending Slack message: %s", str(e))
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -97,6 +118,7 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
     result = execute_query("SELECT source_url FROM pipelines WHERE name = ?", (pipeline_name,), fetch=True)
     if not result:
         logging.error(f"No source URL found for pipeline `{pipeline_name}`")
+        send_slack_message(f"Pipeline `{pipeline_name}` failed: No source URL found.")
         return None
 
     source_url = result[0][0].strip()
@@ -158,6 +180,7 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
             pipeline_name, table_name, dataset_name, source_url,
             "started", "Pipeline execution started", start_time=start_time
         )
+        send_slack_message(f"Pipeline `{pipeline_name}` started at {start_time.isoformat()}.")
 
         # Pass write_disposition when running the pipeline if applicable.
         if write_disposition:
@@ -177,6 +200,7 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
             "completed", f"Completed in {duration} seconds. Rows Loaded: {total_rows}",
             start_time=start_time, end_time=end_time, trace=trace
         )
+        send_slack_message(f"Pipeline `{pipeline_name}` completed in {duration} seconds. Rows Loaded: {total_rows}.")
         return total_rows
     except Exception as e:
         end_time = datetime.now()
@@ -188,6 +212,7 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
             "error", f"Failed in {duration} seconds: {str(e)}",
             start_time=start_time, end_time=end_time, trace=trace_obj
         )
+        send_slack_message(f"Pipeline `{pipeline_name}` failed after {duration} seconds: {str(e)}")
         return None
 
 

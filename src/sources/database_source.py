@@ -92,7 +92,7 @@ def fetch_data_from_database(pipeline_name):
                 engine,
                 table=table_name,
                 schema=schema_name,
-                incremental=dlt.sources.incremental(delta_column, initial_value=initial_dt)
+                incremental=dlt.sources.incremental(delta_column, initial_value=initial_dt).parallelize()
             )
             res = res.apply_hints(primary_key=primary_key)
         else:
@@ -106,7 +106,7 @@ def fetch_data_from_database(pipeline_name):
             return None
         logging.info(f"Loading schema '{schema_name}' from database.")
         # Create a full-schema source.
-        source = sql_database(engine, schema=schema_name)
+        source = sql_database(engine, schema=schema_name).parallelize()
         table_list = db_config.get("tables")  # List of tables to load.
         if table_list and len(table_list) > 0:
             logging.info(f"Selecting table subset: {table_list}")
