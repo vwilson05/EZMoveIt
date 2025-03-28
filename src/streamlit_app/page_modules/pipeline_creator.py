@@ -37,11 +37,9 @@ def save_source_config(source_key, config_data):
         json.dump(config_data, f, indent=2, default=str)
 
 
-# A dlt source that returns selected tables.
 @dlt.source
 def selected_tables_source(engine, schema: str, table_names: list[str]):
     logging.info(f"Creating source from tables: {table_names} in schema: {schema}")
-    # In some versions, a source function returns a dict of resources.
     resources = {tbl: dlt.sources.sql_database.sql_table(engine, table=tbl, schema=schema) for tbl in table_names}
     return resources
 
@@ -110,10 +108,21 @@ def pipeline_creator_page():
         st.subheader(f"🔧 Configure {selected_source}")
         if selected_source == "REST API (Public)":
             source_url = st.text_input("📡 API Endpoint URL", "https://publicapi.example.com/data")
+            st.subheader("Incremental Load Settings")
+            incremental_type = st.selectbox("Load Type", options=["FULL", "INCREMENTAL"], index=0, key="api_public_incr")
+            api_config = {"incremental_type": incremental_type}
+            if incremental_type == "INCREMENTAL":
+                primary_key = st.text_input("Primary Key Field", placeholder="e.g., id", key="api_public_pk")
+                delta_column = st.text_input("Delta (Cursor) Field", placeholder="e.g., meta.updatedAt", key="api_public_delta_col")
+                delta_value = st.text_input("Initial Delta Value", placeholder="e.g., 1900-01-01", key="api_public_delta_val")
+                # For consistency, also set incremental.cursor_path equal to delta_column.
+                api_config.update({"primary_key": primary_key, "delta_column": delta_column, "incremental": {"cursor_path": delta_column}, "delta_value": delta_value})
+            source_config = {"endpoint_url": source_url}
+            source_config.update(api_config)
         elif selected_source == "REST API (Private)":
             source_url = st.text_input("📡 API Endpoint URL", "https://privateapi.example.com/data")
             st.subheader("🔑 Authentication")
-            st.radio("Auth Type", ["API Key", "OAuth", "Custom Headers"])
+            st.radio("Auth Type", ["API Key", "OAuth", "Custom Headers"], key="api_private_auth")
             auth_config = st.text_area(
                 "🔐 Enter Authentication Headers (JSON format)",
                 """
@@ -123,29 +132,41 @@ def pipeline_creator_page():
 }
                 """,
                 height=150,
+                key="api_private_auth_headers"
             )
+            st.subheader("Incremental Load Settings")
+            incremental_type = st.selectbox("Load Type", options=["FULL", "INCREMENTAL"], index=0, key="api_private_incr")
+            api_config = {"incremental_type": incremental_type}
+            if incremental_type == "INCREMENTAL":
+                primary_key = st.text_input("Primary Key Field", placeholder="e.g., id", key="api_private_pk")
+                delta_column = st.text_input("Delta (Cursor) Field", placeholder="e.g., meta.updatedAt", key="api_private_delta_col")
+                delta_value = st.text_input("Initial Delta Value", placeholder="e.g., 1900-01-01", key="api_private_delta_val")
+                api_config.update({"primary_key": primary_key, "delta_column": delta_column, "incremental": {"cursor_path": delta_column}, "delta_value": delta_value})
+            try:
+                parsed_auth_config = json.loads(auth_config)
+            except json.JSONDecodeError:
+                parsed_auth_config = {}
+            source_config = {"endpoint_url": source_url, "auth": parsed_auth_config}
+            source_config.update(api_config)
         elif selected_source == "oracle":
             source_config = {}
             source_config["host"] = st.text_input("Host", "localhost")
             source_config["port"] = st.number_input("Port", min_value=1, max_value=65535, value=1521)
             source_config["user"] = st.text_input("User", "admin")
             source_config["password"] = st.text_input("Password", type="password", key="oracle_db_password")
-            # Use one input for database/service_name; they will be the same.
             database_input = st.text_input("Database / Service Name", "orcl")
             source_config["database"] = database_input
-            source_config["service_name"] = database_input  # Reuse as service_name
+            source_config["service_name"] = database_input
             source_config["schema"] = st.text_input("Schema Name", "my_schema")
             source_config["db_type"] = "oracle"
             mode_val = st.radio("Mode", options=["Single Table", "Entire Database"], index=0)
             if mode_val == "Single Table":
                 table = st.text_input("Source Table Name", "customers")
                 source_config["mode"] = "sql_table"
-                # Lowercase the table name for Oracle consistency.
                 source_config["table"] = table.lower()
             else:
                 source_config["mode"] = "sql_database"
             source_url = f"oracle://{source_config['host']}:{source_config['port']}/{source_config.get('service_name','')}"
-
         elif selected_source in ["postgres", "mysql", "bigquery", "redshift", "microsoft_sqlserver"]:
             source_config = {}
             source_config["host"] = st.text_input("Host", placeholder="The hostname of your server.")
@@ -239,84 +260,91 @@ def pipeline_creator_page():
             
             st.dataframe(df_schema)
             
-            # Partition selected tables by their incremental mode.
-            full_tables = []
-            incr_tables = []
-            for _, row in df_schema.iterrows():
-                tbl = row["table_name"]
-                if tbl in selected_tables:
-                    if row["incremental_mode"].upper() == "INCREMENTAL":
-                        incr_tables.append(tbl)
+            # For API configurations, dynamically construct config using metadata.
+            if selected_source_type.lower() in ["api-public", "rest-api-public", "api-private", "rest api-private"]:
+                # Use selected_database as domain and first selected table as endpoint path.
+                endpoint = selected_tables[0] if selected_tables else ""
+                common_config = {
+                    "endpoint_url": f"https://{selected_database}/{endpoint}",
+                    "data_selector": endpoint
+                }
+                # If metadata indicates incremental mode, update config accordingly.
+                if not df_schema.empty:
+                    row0 = df_schema.iloc[0]
+                    if str(row0.get("incremental_mode", "")).upper() == "INCREMENTAL":
+                        common_config.update({
+                            "incremental_type": "INCREMENTAL",
+                            "primary_key": row0.get("primary_key", ""),
+                            "delta_column": row0.get("delta_column", ""),
+                            "incremental": {"cursor_path": row0.get("delta_column", "")}
+                        })
                     else:
-                        full_tables.append(tbl)
-            
-            common_config = {
-                "database": selected_database,
-                "schema": selected_schema,
-                "db_type": "microsoft_sqlserver" 
-                            if selected_source_type.lower() in ["sql server", "microsoft sqlserver"] 
-                            else selected_source_type.lower()
-            }
-            # For Oracle, add service_name (using the database value) and ensure table names are lowercase.
-            if selected_source_type.lower() == "oracle":
-                common_config["service_name"] = selected_database
-            
-            configs_to_save = {}
-            if full_tables:
-                full_config = common_config.copy()
-                full_config["mode"] = "sql_database"
-                full_config["tables"] = full_tables
-                full_config["incremental_type"] = "FULL"
-                configs_to_save["FULL"] = full_config
-            if incr_tables:
-                incr_config = common_config.copy()
-                incr_config["mode"] = "sql_database"
-                incr_config["tables"] = incr_tables
-                incr_config["incremental_type"] = "INCREMENTAL"
-                row0 = df_schema[df_schema["table_name"].isin(incr_tables)].iloc[0]
-                incr_config["primary_key"] = row0.get("primary_key", "")
-                incr_config["delta_column"] = row0.get("delta_column", "")
-                incr_config["delta_value"] = row0.get("delta_value", "")
-                configs_to_save["INCR"] = incr_config
-            
-            host = st.text_input("Host for selected config", value="3.141.25.89")
-            user = st.text_input("User for selected config", value="sa")
-            pwd = st.text_input("Password for selected config", type="password")
-            for key in configs_to_save:
-                configs_to_save[key]["host"] = host
-                configs_to_save[key]["user"] = user
-                configs_to_save[key]["password"] = pwd
-            
-            tables_part = ""
-            if full_tables and incr_tables:
-                tables_part = f"{','.join(full_tables)}-{','.join(incr_tables)}"
-            elif full_tables:
-                tables_part = ",".join(full_tables)
-            elif incr_tables:
-                tables_part = ",".join(incr_tables)
-            default_pipeline_name = f"{common_config.get('db_type','')}-{selected_database}-{selected_schema}-{tables_part}"
+                        common_config.update({"incremental_type": "FULL"})
+                default_pipeline_name = f"{selected_source_type.replace(' ', '_')}-{selected_database}-{endpoint}"
+            else:
+                # For non-API sources, use existing behavior.
+                common_config = {
+                    "database": selected_database,
+                    "schema": selected_schema,
+                    "db_type": "microsoft_sqlserver" 
+                                if selected_source_type.lower() in ["sql server", "microsoft sqlserver"] 
+                                else selected_source_type.lower()
+                }
+                full_tables = []
+                incr_tables = []
+                for _, row in df_schema.iterrows():
+                    tbl = row["table_name"]
+                    if tbl in (selected_tables if not load_all_tables else available_tables):
+                        if str(row["incremental_mode"]).upper() == "INCREMENTAL":
+                            incr_tables.append(tbl)
+                        else:
+                            full_tables.append(tbl)
+                
+                configs_to_save = {}
+                if full_tables:
+                    full_config = common_config.copy()
+                    full_config["mode"] = "sql_database"
+                    full_config["tables"] = full_tables
+                    full_config["incremental_type"] = "FULL"
+                    configs_to_save["FULL"] = full_config
+                if incr_tables:
+                    incr_config = common_config.copy()
+                    incr_config["mode"] = "sql_database"
+                    incr_config["tables"] = incr_tables
+                    incr_config["incremental_type"] = "INCREMENTAL"
+                    row0 = df_schema[df_schema["table_name"].isin(incr_tables)].iloc[0]
+                    incr_config["primary_key"] = row0.get("primary_key", "")
+                    incr_config["delta_column"] = row0.get("delta_column", "")
+                    incr_config["delta_value"] = row0.get("delta_value", "")
+                    configs_to_save["INCR"] = incr_config
+
+                host = st.text_input("Host for selected config", value="3.141.25.89")
+                user = st.text_input("User for selected config", value="sa")
+                pwd = st.text_input("Password for selected config", type="password")
+                for key in configs_to_save:
+                    configs_to_save[key]["host"] = host
+                    configs_to_save[key]["user"] = user
+                    configs_to_save[key]["password"] = pwd
+                default_pipeline_name = f"{common_config.get('db_type','')}-{selected_database}-{selected_schema}-{'_'.join(selected_tables)}"
+                # Merge FULL and INCR settings if available.
+                common_config = {}
+                if "FULL" in configs_to_save:
+                    common_config.update(configs_to_save["FULL"])
+                if "INCR" in configs_to_save:
+                    common_config.update({
+                        "incremental_type": configs_to_save["INCR"].get("incremental_type", "FULL"),
+                        "primary_key": configs_to_save["INCR"].get("primary_key", ""),
+                        "delta_column": configs_to_save["INCR"].get("delta_column", ""),
+                        "delta_value": configs_to_save["INCR"].get("delta_value", "")
+                    })
             default_pipeline_name = default_pipeline_name.replace(",", "_").replace(" ", "_")
-            default_dataset_name = f"{selected_database.upper()}_{selected_schema.upper()}"
+            default_dataset_name = f"{selected_database.upper()}_{selected_schema.upper()}" if selected_source_type.lower() not in ["api-public", "rest api-public", "api-private", "rest-api-private"] else selected_database.upper()
+            source_config = common_config.copy()
             
-            common_config_final = common_config.copy()
-            if not load_all_tables:
-                common_config_final["tables"] = selected_tables
-            if "INCR" in configs_to_save:
-                common_config_final.update({
-                    "incremental_type": configs_to_save["INCR"].get("incremental_type", "FULL"),
-                    "primary_key": configs_to_save["INCR"].get("primary_key", ""),
-                    "delta_column": configs_to_save["INCR"].get("delta_column", ""),
-                    "delta_value": configs_to_save["INCR"].get("delta_value", "")
-                })
-            source_config = common_config_final.copy()
-            
-            disp_config = {}
-            disp_config.update(configs_to_save.get("FULL", {}))
-            disp_config.update(configs_to_save.get("INCR", {}))
-            if "password" in disp_config:
-                disp_config["password"] = "****"
-            st.info(f"Using configuration from metadata: {json.dumps(disp_config, default=str, indent=2)}")
-            source_url = f"microsoft_sqlserver://{host}:1433/{selected_database}"
+            if selected_source_type.lower() in ["api-public", "rest api-public", "api-private", "rest-api-private"]:
+                source_url = source_config.get("endpoint_url", "")
+            else:
+                source_url = f"microsoft_sqlserver://{host}:1433/{selected_database}"
         else:
             st.info("No configurations found in metadata.")
 
@@ -350,39 +378,44 @@ def pipeline_creator_page():
     
     if st.button("🚀 Create Pipeline"):
         if config_mode == "Manual Entry":
-            if selected_source == "REST API (Private)":
-                try:
-                    parsed_auth_config = json.loads(auth_config)
-                    source_config = {"auth": parsed_auth_config}
-                    config_key = name if name else selected_source
-                    save_source_config(config_key, source_config)
-                    st.info(f"Configuration saved for `{config_key}`!")
-                except json.JSONDecodeError:
-                    st.error("Invalid JSON format in Authentication Headers")
-                    st.stop()
+            if selected_source in ["REST API (Private)", "REST API (Public)"]:
+                config_key = name if name else selected_source
+                save_source_config(config_key, source_config)
+                st.info(f"Configuration saved for `{config_key}`!")
             elif selected_source in ["oracle", "postgres", "mysql", "bigquery", "redshift", "microsoft_sqlserver"]:
                 config_key = name if name else selected_source
                 save_source_config(config_key, source_config)
                 st.info(f"Configuration saved for `{config_key}`!")
         elif config_mode == "Select from Config" and source_config is not None:
-            if "FULL" in configs_to_save:
-                config_key = f"{name}-FULL"
-                save_source_config(config_key, configs_to_save["FULL"])
+            if selected_source_type.lower() not in ["api-public", "rest api-public", "api-private", "rest-api-private"]:
+                if "FULL" in configs_to_save:
+                    config_key = f"{name}-FULL"
+                    save_source_config(config_key, configs_to_save["FULL"])
+                    execute_query(
+                        "INSERT INTO pipelines (id, name, source_url, snowflake_target, dataset_name, schedule, last_run_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (get_next_pipeline_id(), f"{name}-FULL", source_url, target_table, dataset_name, 
+                         "Scheduled" if schedule_option == "Schedule Recurring Run" else "One-Time", "not run")
+                    )
+                    st.success(f"Pipeline `{name}-FULL` (Full load) created successfully!")
+                if "INCR" in configs_to_save:
+                    config_key = f"{name}-INCR"
+                    save_source_config(config_key, configs_to_save["INCR"])
+                    execute_query(
+                        "INSERT INTO pipelines (id, name, source_url, snowflake_target, dataset_name, schedule, last_run_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (get_next_pipeline_id(), f"{name}-INCR", source_url, target_table, dataset_name, 
+                         "Scheduled" if schedule_option == "Schedule Recurring Run" else "One-Time", "not run")
+                    )
+                    st.success(f"Pipeline `{name}-INCR` (Incremental load) created successfully!")
+            else:
+                # For API configs from metadata, simply save the constructed config.
+                config_key = name
+                save_source_config(config_key, source_config)
                 execute_query(
                     "INSERT INTO pipelines (id, name, source_url, snowflake_target, dataset_name, schedule, last_run_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (get_next_pipeline_id(), f"{name}-FULL", source_url, target_table, dataset_name, 
+                    (get_next_pipeline_id(), name, source_url, target_table, dataset_name, 
                      "Scheduled" if schedule_option == "Schedule Recurring Run" else "One-Time", "not run")
                 )
-                st.success(f"Pipeline `{name}-FULL` (Full load) created successfully!")
-            if "INCR" in configs_to_save:
-                config_key = f"{name}-INCR"
-                save_source_config(config_key, configs_to_save["INCR"])
-                execute_query(
-                    "INSERT INTO pipelines (id, name, source_url, snowflake_target, dataset_name, schedule, last_run_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (get_next_pipeline_id(), f"{name}-INCR", source_url, target_table, dataset_name, 
-                     "Scheduled" if schedule_option == "Schedule Recurring Run" else "One-Time", "not run")
-                )
-                st.success(f"Pipeline `{name}-INCR` (Incremental load) created successfully!")
+                st.success(f"Pipeline `{name}` created successfully!")
         st.success("Pipeline(s) created successfully!")
     
     st.subheader("📜 Existing Pipelines")

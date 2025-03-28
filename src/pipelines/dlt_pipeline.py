@@ -3,10 +3,11 @@ import json
 from datetime import datetime
 import logging
 import dlt
+import pendulum
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 
-from src.sources.api_source import fetch_data_from_api
+from src.sources.api_source import fetch_data_from_api, load_api_config, get_api_resource
 from src.sources.database_source import fetch_data_from_database, load_db_config
 from src.sources.storage_source import fetch_data_from_s3
 from src.db.duckdb_connection import execute_query
@@ -102,14 +103,22 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
     source_url_lower = source_url.lower()
     logging.info(f"Normalized source URL: {source_url_lower}")
 
+    # If the source URL is an API endpoint (http), load API configuration
     if source_url_lower.startswith("http"):
-        data = fetch_data_from_api(source_url, pipeline_name)
+        # For API sources, load the API config.
+        api_config = load_api_config(pipeline_name)
+        incremental_type = api_config.get("incremental_type", "FULL").upper()
+        if incremental_type == "INCREMENTAL":
+            # Build the resource with incremental hints using get_api_resource.
+            data_resource = get_api_resource(pipeline_name, table_name, source_url)
+        else:
+            @dlt.resource(name=table_name, write_disposition="replace")
+            def api_data_resource():
+                data = fetch_data_from_api(source_url, pipeline_name)
+                yield from data
+            data_resource = api_data_resource
 
-        @dlt.resource(name=table_name, write_disposition="append")
-        def api_data_resource():
-            yield from data
-
-        data_to_run = api_data_resource
+        data_to_run = data_resource
     elif source_url_lower.startswith("s3://"):
         data = fetch_data_from_s3(pipeline_name)
         data_to_run = data
@@ -126,12 +135,17 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
         return None
 
     # Determine write disposition based on config incremental_type:
-    db_config = load_db_config(pipeline_name)
-    incremental_type = db_config.get("incremental_type", "FULL").upper()
-    if incremental_type == "FULL":
-        write_disposition = "replace"
-    else:  # "INCREMENTAL"
-        write_disposition = "merge"
+    # For database sources the configuration is loaded from the db config.
+    # For API sources, we already set the resource with the proper disposition.
+    if source_url_lower.startswith("http"):
+        write_disposition = None  # Already set in the resource function.
+    else:
+        db_config = load_db_config(pipeline_name)
+        incremental_type = db_config.get("incremental_type", "FULL").upper()
+        if incremental_type == "FULL":
+            write_disposition = "replace"
+        else:  # "INCREMENTAL"
+            write_disposition = "merge"
 
     pipeline = dlt.pipeline(
         pipeline_name=pipeline_name,
@@ -145,8 +159,11 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
             "started", "Pipeline execution started", start_time=start_time
         )
 
-        # Pass write_disposition when running the pipeline
-        pipeline.run(data_to_run, write_disposition=write_disposition)
+        # Pass write_disposition when running the pipeline if applicable.
+        if write_disposition:
+            pipeline.run(data_to_run, write_disposition=write_disposition)
+        else:
+            pipeline.run(data_to_run)
 
         end_time = datetime.now()
         duration = round((end_time - start_time).total_seconds(), 2)
