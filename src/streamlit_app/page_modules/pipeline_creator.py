@@ -394,11 +394,23 @@ def pipeline_creator_page():
             if selected_source in ["REST API (Private)", "REST API (Public)"]:
                 config_key = name if name else selected_source
                 save_source_config(config_key, source_config)
-                st.info(f"Configuration saved for `{config_key}`!")
+                # Insert a pipeline record for API sources:
+                execute_query(
+                    "INSERT INTO pipelines (id, name, source_url, snowflake_target, dataset_name, schedule, last_run_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (get_next_pipeline_id(), config_key, source_url, target_table, dataset_name, 
+                    "Scheduled" if schedule_option == "Schedule Recurring Run" else "One-Time", "not run")
+                )
+                st.info(f"Configuration saved and pipeline record inserted for `{config_key}`!")
             elif selected_source in ["oracle", "postgres", "mysql", "bigquery", "redshift", "microsoft_sqlserver"]:
                 config_key = name if name else selected_source
                 save_source_config(config_key, source_config)
-                st.info(f"Configuration saved for `{config_key}`!")
+                # Insert a pipeline record for database sources:
+                execute_query(
+                    "INSERT INTO pipelines (id, name, source_url, snowflake_target, dataset_name, schedule, last_run_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (get_next_pipeline_id(), config_key, source_url, target_table, dataset_name,
+                    "Scheduled" if schedule_option == "Schedule Recurring Run" else "One-Time", "not run")
+                )
+                st.info(f"Configuration saved and pipeline record inserted for `{config_key}`!")
         elif config_mode == "Select from Config" and source_config is not None:
             if selected_source_type.lower() not in ["api-public", "rest api-public", "api-private", "rest-api-private"]:
                 if "FULL" in configs_to_save:
