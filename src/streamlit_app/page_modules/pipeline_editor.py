@@ -110,12 +110,13 @@ def pipeline_editor_page():
                     (name, dataset_name, target_table, source_url, json.dumps(source_config), pipeline_id)
                 )
                 
-                # Update source config
-                config = {
+                # Update source config JSON file
+                config_data = {
                     "endpoint_url": source_url,
-                    "data_selector": source_url.split("/")[-1]
+                    "auth": source_config.get("auth", {}),
+                    "incremental_type": "FULL"
                 }
-                save_source_config(name, config)
+                save_source_config(name, config_data)
                 
                 st.success("Pipeline updated successfully!")
                 st.rerun()  # Refresh the page to show updated data
