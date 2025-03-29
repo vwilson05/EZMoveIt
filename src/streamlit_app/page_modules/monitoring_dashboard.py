@@ -270,23 +270,29 @@ def monitoring_dashboard():
     # Pipeline Details
     st.subheader("📋 Pipeline Details")
     
+    # Define named functions for aggregation
+    def success_rate(x):
+        return (x == 'completed').mean() * 100
+    
+    def failed_count(x):
+        return (x == 'failed').sum()
+    
     # Summary table
     summary_df = df.groupby('pipeline_name').agg({
-        'status': lambda x: (x == 'completed').mean() * 100,
+        'status': [success_rate, failed_count],
         'duration': ['mean', 'std'],
-        'rows_processed': ['mean', 'sum'],
-        'status': lambda x: (x == 'failed').sum()
+        'rows_processed': ['mean', 'sum']
     }).round(2)
     
     # Create a new DataFrame with the correct column names
     summary_df_new = pd.DataFrame({
         'pipeline_name': summary_df.index,
-        'Success Rate (%)': summary_df[('status', '<lambda>')],
+        'Success Rate (%)': summary_df[('status', 'success_rate')],
         'Avg Duration (s)': summary_df[('duration', 'mean')],
         'Duration Std (s)': summary_df[('duration', 'std')],
         'Avg Rows': summary_df[('rows_processed', 'mean')],
         'Total Rows': summary_df[('rows_processed', 'sum')],
-        'Failed Runs': summary_df[('status', '<lambda_1>')]
+        'Failed Runs': summary_df[('status', 'failed_count')]
     })
     
     st.dataframe(
