@@ -287,14 +287,20 @@ def pipeline_creator_page():
             value=st.session_state.interval_minutes
         )
     elif st.session_state.schedule_option == "Daily":
+        # Convert datetime to time if needed
+        if isinstance(st.session_state.start_time_val, datetime):
+            st.session_state.start_time_val = st.session_state.start_time_val.time()
         st.session_state.start_time_val = st.time_input(
             "Start Time",
-            value=st.session_state.start_time_val.time()
+            value=st.session_state.start_time_val
         )
     elif st.session_state.schedule_option == "Weekly":
+        # Convert datetime to time if needed
+        if isinstance(st.session_state.start_time_val, datetime):
+            st.session_state.start_time_val = st.session_state.start_time_val.time()
         st.session_state.start_time_val = st.time_input(
             "Start Time",
-            value=st.session_state.start_time_val.time()
+            value=st.session_state.start_time_val
         )
         weekday = st.selectbox(
             "Day of Week",
