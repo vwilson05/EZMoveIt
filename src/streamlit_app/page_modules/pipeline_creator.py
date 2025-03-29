@@ -467,8 +467,11 @@ def pipeline_creator_page():
                         if not creds:
                             st.error("No Snowflake credentials found. Please enter them above.")
                         else:
-                            progress_placeholder = st.empty()
-                            status_placeholder = st.empty()
+                            # Create containers for different stages
+                            extract_container = st.empty()
+                            normalize_container = st.empty()
+                            load_container = st.empty()
+                            status_container = st.empty()
                             result_container = {"status": "Pipeline started...", "result": None}
 
                             def run_pipeline_thread():
@@ -483,15 +486,27 @@ def pipeline_creator_page():
                             pipeline_thread = threading.Thread(target=run_pipeline_thread, daemon=True)
                             pipeline_thread.start()
 
-                            for i in range(101):
-                                if not pipeline_thread.is_alive():
-                                    progress_placeholder.progress(100)
-                                    break
-                                progress_placeholder.progress(i)
-                                status_placeholder.info(result_container["status"])
-                                time.sleep(0.2)
+                            # Update UI with progress
+                            while pipeline_thread.is_alive():
+                                # Extract stage
+                                extract_container.progress(50, text="Extracting data...")
+                                time.sleep(0.5)
+                                
+                                # Normalize stage
+                                normalize_container.progress(100, text="Normalizing data...")
+                                time.sleep(0.5)
+                                
+                                # Load stage
+                                load_container.progress(100, text="Loading to Snowflake...")
+                                time.sleep(0.5)
+                                
+                                status_container.info(result_container["status"])
 
-                            status_placeholder.info(result_container["status"])
+                            # Final update
+                            extract_container.progress(100, text="Extraction complete")
+                            normalize_container.progress(100, text="Normalization complete")
+                            load_container.progress(100, text="Load complete")
+                            status_container.success(result_container["status"])
             st.markdown("---")
     else:
         st.info("No pipelines found. Create one above!")

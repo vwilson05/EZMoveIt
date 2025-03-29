@@ -51,3 +51,4 @@ pyodbc
 oracledb
 griffe
 streamlit-option-menu
+enlighten==1.11.1

@@ -5,6 +5,7 @@ import logging
 import dlt
 import pendulum
 import requests
+import enlighten
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 
@@ -118,6 +119,14 @@ def load_snowflake_credentials():
 
 
 def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
+    # Initialize enlighten manager
+    manager = enlighten.get_manager()
+    
+    # Create progress bars for different stages
+    extract_bar = manager.counter(total=100, desc='Extracting', unit='%')
+    normalize_bar = manager.counter(total=100, desc='Normalizing', unit='%')
+    load_bar = manager.counter(total=100, desc='Loading', unit='%')
+    
     result = execute_query("SELECT source_url FROM pipelines WHERE name = ?", (pipeline_name,), fetch=True)
     if not result:
         logging.error(f"No source URL found for pipeline `{pipeline_name}`")
@@ -160,8 +169,6 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
         return None
 
     # Determine write disposition based on config incremental_type:
-    # For database sources the configuration is loaded from the db config.
-    # For API sources, we already set the resource with the proper disposition.
     if source_url_lower.startswith("http"):
         write_disposition = None  # Already set in the resource function.
     else:
@@ -183,12 +190,21 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
                                "started", "Pipeline execution started", start_time=start_time)
         send_slack_message(f"Pipeline `{pipeline_name}` started at {start_time.isoformat()}.")
 
+        # Update extract progress
+        extract_bar.update(50)
+        
         if write_disposition:
             pipeline.run(data_to_run, write_disposition=write_disposition)
         else:
             pipeline.run(data_to_run)
 
+        # Update normalize progress
+        normalize_bar.update(100)
+        
         pipeline.run([pipeline.last_trace], table_name="_trace")
+
+        # Update load progress
+        load_bar.update(100)
 
         end_time = datetime.now()
         duration = round((end_time - start_time).total_seconds(), 2)
@@ -228,6 +244,12 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
         )
         send_slack_message(f"Pipeline `{pipeline_name}` failed after {duration} seconds: {str(e)}")
         return None
+    finally:
+        # Clean up progress bars
+        extract_bar.close()
+        normalize_bar.close()
+        load_bar.close()
+        manager.stop()
 
 def log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, event, message, start_time=None, end_time=None, trace=None):
     result = execute_query("SELECT id FROM pipelines WHERE name = ?", (pipeline_name,), fetch=True)
