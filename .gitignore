@@ -4,3 +4,4 @@ config/config.json
 *config.json
 *.pyc
 __pycache__/
+insert_rows.py

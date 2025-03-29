@@ -33,14 +33,14 @@ metadata = MetaData()
 #     schema="retail_demo"
 # )
 
-products = Table("Products", metadata,
-    Column("ProductID", Integer, primary_key=True, autoincrement=True),
-    Column("ProductName", String(100)),
-    Column("Category", String(50)),
-    Column("Price", Numeric(10,2)),
-    Column("Stock", Integer),
-    schema="retail_demo"
-)
+# products = Table("Products", metadata,
+#     Column("ProductID", Integer, primary_key=True, autoincrement=True),
+#     Column("ProductName", String(100)),
+#     Column("Category", String(50)),
+#     Column("Price", Numeric(10,2)),
+#     Column("Stock", Integer),
+#     schema="retail_demo"
+# )
 
 orders = Table("Orders", metadata,
     Column("OrderID", Integer, primary_key=True, autoincrement=True),
@@ -101,18 +101,18 @@ def random_phone():
 #     }
 #     stores_rows.append(row)
 
-# Products
-product_names = ["Widget", "Gadget", "Thingamajig", "Doodad", "Doohickey"]
-categories = ["Category A", "Category B", "Category C"]
-products_rows = []
-for i in range(total_rows):
-    row = {
-        "ProductName": random.choice(product_names) + " " + str(random.randint(1,1000)),
-        "Category": random.choice(categories),
-        "Price": round(random.uniform(5.0, 500.0), 2),
-        "Stock": random.randint(0, 1000)
-    }
-    products_rows.append(row)
+# # Products
+# product_names = ["Widget", "Gadget", "Thingamajig", "Doodad", "Doohickey"]
+# categories = ["Category A", "Category B", "Category C"]
+# products_rows = []
+# for i in range(total_rows):
+#     row = {
+#         "ProductName": random.choice(product_names) + " " + str(random.randint(1,1000)),
+#         "Category": random.choice(categories),
+#         "Price": round(random.uniform(5.0, 500.0), 2),
+#         "Stock": random.randint(0, 1000)
+#     }
+#     products_rows.append(row)
     
 # Orders
 orders_rows = []
@@ -137,7 +137,7 @@ for i in range(total_rows):
 
 # print(f"Total customers prepared: {len(customer_rows)}")
 # print(f"Total stores prepared: {len(stores_rows)}")
-print(f"Total products prepared: {len(products_rows)}")
+# print(f"Total products prepared: {len(products_rows)}")
 print(f"Total orders prepared: {len(orders_rows)}")
 print(f"Total orderitems prepared: {len(orderitems_rows)}")
 print(f"Starting batch insert with batch size: {batch_size}")
@@ -156,8 +156,8 @@ def insert_in_batches(table, rows):
 # print("Inserting Stores...")
 # insert_in_batches(stores, stores_rows)
 
-print("Inserting Products...")
-insert_in_batches(products, products_rows)
+# print("Inserting Products...")
+# insert_in_batches(products, products_rows)
 
 print("Inserting Orders...")
 insert_in_batches(orders, orders_rows)

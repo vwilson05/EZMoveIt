@@ -16,6 +16,9 @@ from config.slack_config import load_slack_config
 
 load_slack_config()
 
+import os
+os.environ["PROGRESS"] = "log" 
+
 def send_slack_message(message: str):
     """Sends a Slack message using the SLACK_WEBHOOK_URL environment variable."""
     webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
@@ -176,17 +179,16 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
     )
     try:
         start_time = datetime.now()
-        log_pipeline_execution(
-            pipeline_name, table_name, dataset_name, source_url,
-            "started", "Pipeline execution started", start_time=start_time
-        )
+        log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url,
+                               "started", "Pipeline execution started", start_time=start_time)
         send_slack_message(f"Pipeline `{pipeline_name}` started at {start_time.isoformat()}.")
 
-        # Pass write_disposition when running the pipeline if applicable.
         if write_disposition:
             pipeline.run(data_to_run, write_disposition=write_disposition)
         else:
             pipeline.run(data_to_run)
+
+        pipeline.run([pipeline.last_trace], table_name="_trace")
 
         end_time = datetime.now()
         duration = round((end_time - start_time).total_seconds(), 2)
@@ -194,10 +196,22 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
         row_counts = trace.last_normalize_info.row_counts if trace and trace.last_normalize_info else {}
         total_rows = sum(count for table, count in row_counts.items() if not table.startswith("_dlt_"))
         logging.info(f"Pipeline `{pipeline_name}` completed in {duration} seconds! Rows Loaded: {total_rows}")
+        logging.info("Extract Info: %s", pipeline.last_trace.last_extract_info)
+        logging.info("Normalize Info: %s", pipeline.last_trace.last_normalize_info)
+        logging.info("Load Info: %s", pipeline.last_trace.last_load_info)
+        logging.info("Row Counts: %s", pipeline.last_trace.last_normalize_info.row_counts)
+        
+        # Here we also try to log per-resource trace details if available.
+        per_resource_details = ""
+        if trace and hasattr(trace, "resource_traces"):
+            for res_name, res_trace in trace.resource_traces.items():
+                per_resource_details += f"\nResource '{res_name}': {res_trace}"
+        else:
+            per_resource_details = "No per-resource trace details available."
 
         log_pipeline_execution(
             pipeline_name, table_name, dataset_name, source_url,
-            "completed", f"Completed in {duration} seconds. Rows Loaded: {total_rows}",
+            "completed", f"Completed in {duration} seconds. Rows Loaded: {total_rows}\nResource Details: {per_resource_details}",
             start_time=start_time, end_time=end_time, trace=trace
         )
         send_slack_message(f"Pipeline `{pipeline_name}` completed in {duration} seconds. Rows Loaded: {total_rows}.")
@@ -215,7 +229,6 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
         send_slack_message(f"Pipeline `{pipeline_name}` failed after {duration} seconds: {str(e)}")
         return None
 
-
 def log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, event, message, start_time=None, end_time=None, trace=None):
     result = execute_query("SELECT id FROM pipelines WHERE name = ?", (pipeline_name,), fetch=True)
     if not result:
@@ -225,28 +238,42 @@ def log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, 
     log_result = execute_query("SELECT MAX(id) FROM pipeline_logs", fetch=True)
     next_id = (log_result[0][0] + 1) if log_result and log_result[0][0] else 1
 
-    # Compute overall duration if start and end times are provided.
-    duration_val = None
-    if start_time and end_time:
-        duration_val = (end_time - start_time).total_seconds()
+    # Overall duration
+    duration_val = (end_time - start_time).total_seconds() if start_time and end_time else None
 
-    row_counts = None
-    trace_json = None
-    extract_info = normalize_info = load_info = "N/A"
-
+    # Attempt to extract per-stage structured data from the trace.
+    # (These attributes may be available depending on your dlt version/configuration.)
+    extract_data = {}
+    normalize_data = {}
+    load_data = {}
     if trace:
-        try:
-            extract_info = str(trace.last_extract_info) if trace.last_extract_info else "N/A"
-            normalize_info = str(trace.last_normalize_info) if trace.last_normalize_info else "N/A"
-            load_info = str(trace.last_load_info) if trace.last_load_info else "N/A"
-            row_counts_dict = trace.last_normalize_info.row_counts if trace.last_normalize_info else {}
-            row_counts = json.dumps(row_counts_dict)
-            trace_json = str(trace)
-        except Exception as e:
-            logging.warning(f"Failed to extract trace info: {e}")
+        if hasattr(trace, "last_extract_info") and trace.last_extract_info:
+            extract_data = getattr(trace.last_extract_info, "__dict__", {})
+        if hasattr(trace, "last_normalize_info") and trace.last_normalize_info:
+            normalize_data = getattr(trace.last_normalize_info, "__dict__", {})
+        if hasattr(trace, "last_load_info") and trace.last_load_info:
+            load_data = getattr(trace.last_load_info, "__dict__", {})
+
+    # Convert stage info dictionaries to JSON strings
+    extract_json = json.dumps(extract_data, indent=2) if extract_data else "N/A"
+    normalize_json = json.dumps(normalize_data, indent=2) if normalize_data else "N/A"
+    load_json = json.dumps(load_data, indent=2) if load_data else "N/A"
+
+    # Also, per-resource trace info if available.
+    per_resource_details = ""
+    if trace and hasattr(trace, "resource_traces"):
+        for resource_name, resource_trace in trace.resource_traces.items():
+            per_resource_details += f"\nResource '{resource_name}': {repr(resource_trace)}"
+    else:
+        per_resource_details = "No per-resource trace details available."
 
     extended_message = (
-        f"{message}\nExtract Info: {extract_info}\nNormalize Info: {normalize_info}\nLoad Info: {load_info}"
+        f"{message}\n"
+        f"Overall Duration: {duration_val} sec\n"
+        f"Extract Info: {extract_json}\n"
+        f"Normalize Info: {normalize_json}\n"
+        f"Load Info: {load_json}\n"
+        f"Resource Details: {per_resource_details}"
     )
 
     query = """
@@ -256,15 +283,22 @@ def log_pipeline_execution(pipeline_name, table_name, dataset_name, source_url, 
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
+    # Row counts (as before)
+    try:
+        row_counts_dict = trace.last_normalize_info.row_counts if trace and trace.last_normalize_info else {}
+        row_counts = json.dumps(row_counts_dict, indent=2)
+    except Exception as e:
+        logging.warning(f"Failed to extract row counts: {e}")
+        row_counts = "N/A"
+
     execute_query(query, (
         next_id, pipeline_id, pipeline_name, source_url, table_name, dataset_name,
         event, extended_message, duration_val,
         start_time.isoformat() if start_time else None,
         end_time.isoformat() if end_time else None,
-        row_counts, trace_json
+        row_counts, repr(trace) if trace else "N/A"
     ))
     logging.info("Logged event `%s` for pipeline `%s` (ID: %s)", event, pipeline_name, pipeline_id)
-
 
 def run_pipeline_with_creds(pipeline_name: str, dataset_name: str, table_name: str, creds: dict):
     set_env_vars(creds, pipeline_name)

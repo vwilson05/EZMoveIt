@@ -49,3 +49,4 @@ dlt[snowflake]
 matplotlib
 pyodbc
 oracledb
+griffe

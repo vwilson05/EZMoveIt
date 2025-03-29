@@ -5,8 +5,17 @@ from sqlalchemy import create_engine
 import dlt
 import pendulum
 from dlt.sources.sql_database import sql_table, sql_database
+from itertools import islice
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "../../config")
+
+def paginate_generator(gen, chunk_size=50000):
+    """Yield chunks (lists) of rows from the generator."""
+    while True:
+        chunk = list(islice(gen, chunk_size))
+        if not chunk:
+            break
+        yield chunk
 
 def load_db_config(pipeline_name):
     config_path = os.path.join(
@@ -20,18 +29,6 @@ def load_db_config(pipeline_name):
 def fetch_data_from_database(pipeline_name):
     """
     Returns a DLT source/resource for SQL database access.
-
-    Modes:
-      - "sql_table": loads a single table.
-      - "sql_database": loads an entire schema or a selected subset.
-
-    For incremental loads:
-      - We pass an incremental hint to the resource via dlt.sources.incremental.
-      - The initial_value provided (converted from the delta_value string) is only used
-        on the very first run when no state exists.
-      - DLT stores the incremental state (e.g., in a system table like _dlt_state in Snowflake)
-        and uses it in subsequent runs.
-      - The primary key hint is then applied to support merge (upsert) operations.
     """
     db_config = load_db_config(pipeline_name)
     if not db_config:
@@ -68,12 +65,10 @@ def fetch_data_from_database(pipeline_name):
     logging.info("SQLAlchemy engine created.")
 
     # Incremental settings.
-    incremental_type = db_config.get("incremental_type", "FULL").upper()  # "FULL" or "INCREMENTAL"
-    primary_key = db_config.get("primary_key")      # e.g., "CustomerID"
-    delta_column = db_config.get("delta_column")      # e.g., "updated_dt"
-    delta_value = db_config.get("delta_value")        # e.g., "1900-01-01"
-    # Note: DLT will store its incremental state (e.g., in _dlt_state) after a successful run.
-    # The initial_value here is used only if no state exists yet.
+    incremental_type = db_config.get("incremental_type", "FULL").upper()
+    primary_key = db_config.get("primary_key")
+    delta_column = db_config.get("delta_column")
+    delta_value = db_config.get("delta_value")
 
     mode = db_config.get("mode", "sql_table")
     schema_name = db_config.get("schema")
@@ -87,35 +82,30 @@ def fetch_data_from_database(pipeline_name):
         logging.info(f"Configuring sql_table for {schema_name}.{table_name}" if schema_name else f"Configuring sql_table for {table_name}")
         if incremental_type == "INCREMENTAL" and delta_column and delta_value and primary_key:
             initial_dt = pendulum.parse(delta_value)
-            # The incremental hint is passed to sql_table.
             res = sql_table(
                 engine,
                 table=table_name,
                 schema=schema_name,
-                incremental=dlt.sources.incremental(delta_column, initial_value=initial_dt).parallelize()
-            )
-            res = res.apply_hints(primary_key=primary_key)
+                incremental=dlt.sources.incremental(delta_column, initial_value=initial_dt)
+            ).apply_hints(primary_key=primary_key).parallelize()
         else:
-            res = sql_table(engine, table=table_name, schema=schema_name)
-        # In single table mode, the resource from sql_table() should already have a name.
-        return res
+            res = sql_table(engine, table=table_name, schema=schema_name).parallelize()
+        # For single table mode, simply wrap the generator.
+        return paginate_generator(res, 50000)
 
     elif mode == "sql_database":
         if not schema_name:
             logging.error("❌ Schema is required in sql_database mode!")
             return None
         logging.info(f"Loading schema '{schema_name}' from database.")
-        # Create a full-schema source.
         source = sql_database(engine, schema=schema_name).parallelize()
-        table_list = db_config.get("tables")  # List of tables to load.
+        table_list = db_config.get("tables")
         if table_list and len(table_list) > 0:
             logging.info(f"Selecting table subset: {table_list}")
-            # with_resources restricts the source to the specified tables.
             source = source.with_resources(*table_list)
         else:
             logging.info("No specific table subset provided; loading all tables in schema.")
 
-        # Apply incremental hints to each resource if configured.
         if incremental_type == "INCREMENTAL" and delta_column and delta_value and primary_key:
             initial_dt = pendulum.parse(delta_value)
             for tbl in source.resources:
@@ -124,7 +114,12 @@ def fetch_data_from_database(pipeline_name):
                     primary_key=primary_key,
                     incremental=dlt.sources.incremental(delta_column, initial_value=initial_dt)
                 )
-        # The source returned by sql_database() has resources keyed by table name.
+        # Instead of wrapping with a new function object, modify each resource's __call__ method in place.
+        for tbl, resource in source.resources.items():
+            original_call = resource.__call__
+            def new_call(*args, _orig=original_call, **kwargs):
+                return paginate_generator(_orig(*args, **kwargs), 50000)
+            resource.__call__ = new_call
         return source
 
     else:
@@ -132,7 +127,6 @@ def fetch_data_from_database(pipeline_name):
         return None
 
 if __name__ == "__main__":
-    # For testing purposes:
     test_pipeline_name = "test_pipeline"
     resource = fetch_data_from_database(test_pipeline_name)
     if resource:

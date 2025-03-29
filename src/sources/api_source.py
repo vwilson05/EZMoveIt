@@ -5,8 +5,17 @@ import requests
 from datetime import datetime
 import pendulum
 import dlt
+from itertools import islice
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "../../config")
+
+def paginate_generator(gen, chunk_size=50000):
+    """Yield chunks (lists) of rows from the generator."""
+    while True:
+        chunk = list(islice(gen, chunk_size))
+        if not chunk:
+            break
+        yield chunk
 
 def load_api_config(pipeline_name):
     """
@@ -16,6 +25,7 @@ def load_api_config(pipeline_name):
       - auth: a dictionary with authentication headers for private APIs.
       - incremental_type: "FULL" or "INCREMENTAL"
       - primary_key, delta_column, delta_value for incremental loads.
+      - data_selector: key in the response that holds the records
     """
     config_path = os.path.join(
         CONFIG_DIR, f"{pipeline_name.replace(' ', '_').lower()}_config.json"
@@ -52,18 +62,8 @@ def fetch_data_from_api(api_url, pipeline_name):
         item["extracted_at"] = datetime.utcnow().isoformat()
     return data
 
+# For API, we’ll simply yield chunks in the resource functions.
 def get_api_resource(pipeline_name, table_name, api_url):
-    """
-    Returns a dlt resource function for API data.
-    If the config indicates an incremental load, applies incremental hints.
-    
-    If the delta_column in the config contains a dot (e.g. "meta.updatedAt"),
-    the function will extract that nested value and promote it to a new top-level key
-    (e.g. "meta_updatedAt") that will be used as the incremental cursor.
-    
-    Additionally, this function uses add_map to cast the cursor field to a pendulum datetime
-    so that it can be compared with the initial_value.
-    """
     data = fetch_data_from_api(api_url, pipeline_name)
     api_config = load_api_config(pipeline_name)
     incremental_config = api_config.get("incremental", {})
@@ -74,16 +74,12 @@ def get_api_resource(pipeline_name, table_name, api_url):
     
     if incremental_type == "INCREMENTAL":
         primary_key = api_config.get("primary_key")
-        # Get the cursor_path from config; default to the simple delta_column if not nested.
         cursor_path = incremental_config.get("cursor_path") or api_config.get("delta_column")
         delta_value = incremental_config.get("initial_value") or api_config.get("delta_value")
-        # Parse the initial value if provided.
         initial_value = pendulum.parse(delta_value) if delta_value else None
 
-        # Determine effective field name
         if "." in cursor_path:
             effective_delta_field = cursor_path.replace(".", "_")
-            # For each record, traverse the nested keys to extract the value, and set it as a top-level field.
             for item in data:
                 value = item
                 for key in cursor_path.split("."):
@@ -97,12 +93,10 @@ def get_api_resource(pipeline_name, table_name, api_url):
         else:
             effective_delta_field = cursor_path
 
-        # Define the resource that yields the data.
         @dlt.resource(name=table_name, write_disposition="append")
         def resource():
-            yield from data
+            yield from paginate_generator(iter(data), 50000)
 
-        # Use add_map to convert the effective_delta_field from string to a pendulum datetime.
         resource_with_mapping = resource.add_map(
             lambda record: {**record,
                             effective_delta_field: pendulum.parse(record[effective_delta_field])
@@ -115,5 +109,5 @@ def get_api_resource(pipeline_name, table_name, api_url):
     else:
         @dlt.resource(name=table_name, write_disposition="replace")
         def resource():
-            yield from data
+            yield from paginate_generator(iter(data), 50000)
         return resource
