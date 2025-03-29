@@ -325,6 +325,14 @@ def pipeline_creator_page():
                 st.error("Please enter a target table name")
             else:
                 try:
+                    # Save source configuration to JSON file
+                    config_data = {
+                        "endpoint_url": st.session_state.source_url,
+                        "auth": st.session_state.source_config.get("auth", {}),
+                        "incremental_type": "FULL"
+                    }
+                    save_source_config(st.session_state.pipeline_name, config_data)
+                    
                     # Insert pipeline record
                     query = """
                     INSERT INTO pipelines (
@@ -384,6 +392,14 @@ def pipeline_creator_page():
                     dataset_name = st.session_state.dataset_name
                     target_table = st.session_state.target_table
                     snowflake_creds = st.session_state.get("snowflake_creds")
+                    
+                    # Save source configuration to JSON file
+                    config_data = {
+                        "endpoint_url": st.session_state.source_url,
+                        "auth": st.session_state.source_config.get("auth", {}),
+                        "incremental_type": "FULL"
+                    }
+                    save_source_config(pipeline_name, config_data)
                     
                     # Insert pipeline record
                     query = """
