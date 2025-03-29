@@ -18,10 +18,10 @@ from src.db.duckdb_connection import execute_query
 def fetch_pipeline_metrics():
     """Retrieve and parse pipeline execution logs from DuckDB."""
     query = """
-    SELECT pipeline_name, source_url, snowflake_target, event, created_at, log_message, duration
+    SELECT pipeline_name, source_url, target_table, event, timestamp, log_message, duration
     FROM pipeline_logs 
     WHERE event in ('completed', 'failed')
-    ORDER BY created_at DESC
+    ORDER BY timestamp DESC
     """
     logs = execute_query(query, fetch=True)
 
@@ -42,7 +42,7 @@ def fetch_pipeline_metrics():
     for (
         pipeline_name,
         source_url,
-        snowflake_target,
+        target_table,
         event,
         timestamp,
         message,
@@ -50,19 +50,19 @@ def fetch_pipeline_metrics():
     ) in logs:
         rows_loaded = None
 
-        # ✅ Extract "Rows Loaded" value using regex
+        # Extract "Rows Loaded" value using regex
         match = re.search(r"Rows Loaded: (\d+)", message)
         if match:
             rows_loaded = int(match.group(1))
 
-        # ✅ Ensure duration is properly handled (from DB or parsed)
+        # Ensure duration is properly handled (from DB or parsed)
         parsed_duration = float(duration) if duration else None
 
         records.append(
             {
                 "Pipeline": pipeline_name,
                 "Source": source_url,
-                "Target": snowflake_target,
+                "Target": target_table,
                 "Event": event,
                 "Timestamp": timestamp,
                 "Duration (s)": parsed_duration,
@@ -77,7 +77,7 @@ def pipeline_metrics_page():
     """Retrieve and parse pipeline execution logs from DuckDB."""
 
     query = """
-    SELECT pipeline_name, source_url, snowflake_target, event, timestamp, log_message, duration 
+    SELECT pipeline_name, source_url, target_table, event, timestamp, log_message, duration 
     FROM pipeline_logs 
     ORDER BY timestamp DESC
     """
@@ -101,7 +101,7 @@ def pipeline_metrics_page():
     for (
         pipeline_name,
         source_url,
-        snowflake_target,
+        target_table,
         event,
         timestamp,
         message,
@@ -121,7 +121,7 @@ def pipeline_metrics_page():
             {
                 "Pipeline": pipeline_name,
                 "Source": source_url,
-                "Target": snowflake_target,
+                "Target": target_table,
                 "Event": event,
                 "Timestamp": timestamp,
                 "Duration (s)": duration,  # Use stored duration directly

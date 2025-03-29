@@ -5,7 +5,7 @@ from src.db.duckdb_connection import execute_query
 def fetch_execution_logs():
     """Retrieve execution logs from DuckDB, including all relevant fields."""
     query = """
-    SELECT id, pipeline_id, pipeline_name, source_url, snowflake_target, dataset_name,
+    SELECT id, pipeline_id, pipeline_name, source_url, target_table, dataset_name,
            event, created_at, log_message
     FROM pipeline_logs ORDER BY created_at DESC
     """
@@ -24,7 +24,7 @@ def execution_logs_page():
                 pipeline_id,
                 pipeline_name,
                 source_url,
-                snowflake_target,
+                target_table,
                 dataset_name,
                 event,
                 timestamp,
@@ -35,7 +35,7 @@ def execution_logs_page():
             st.markdown(f"🔄 **Status:** `{event}` | 🕒 `{timestamp}`")
             st.markdown(f"📌 **Source URL:** `{source_url}`")
             st.markdown(
-                f"🎯 **Target Table:** `{snowflake_target}` | 🏛 **Schema:** `{dataset_name}`"
+                f"🎯 **Target Table:** `{target_table}` | 🏛 **Schema:** `{dataset_name}`"
             )
             st.markdown(f"📝 **Log Message:** {message}")
             st.markdown("---")
