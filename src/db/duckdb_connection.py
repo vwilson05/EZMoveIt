@@ -33,12 +33,15 @@ def reinitialize_database():
     """Drop and recreate the entire database."""
     try:
         # Close any existing connections
-        conn = duckdb.connect(DB_PATH)
+        conn = duckdb.connect(str(DB_PATH))
         
-        # Drop existing tables
+        # Drop tables in dependency order
+        conn.execute("DROP TABLE IF EXISTS pipeline_log_relations")
         conn.execute("DROP TABLE IF EXISTS pipeline_logs")
         conn.execute("DROP TABLE IF EXISTS pipeline_runs")
         conn.execute("DROP TABLE IF EXISTS pipelines")
+        conn.execute("DROP TABLE IF EXISTS scheduled_jobs")
+        conn.execute("DROP TABLE IF EXISTS scheduled_pipelines")
         conn.execute("DROP TABLE IF EXISTS source_configs")
         
         # Create source_configs table
@@ -52,17 +55,28 @@ def reinitialize_database():
             )
         """)
         
-        # Create pipelines table
+        # Create pipelines table with additional fields
         conn.execute("""
             CREATE TABLE pipelines (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
-                source_url TEXT,
-                target_table TEXT,
-                dataset_name TEXT,
+                source_url TEXT NOT NULL,
+                target_table TEXT NOT NULL,
+                dataset_name TEXT NOT NULL,
                 schedule TEXT,
                 last_run_status TEXT,
-                source_config TEXT
+                source_config TEXT,
+                snowflake_target TEXT,
+                last_run_log TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                api_key TEXT,
+                headers TEXT,
+                total_runs INTEGER DEFAULT 0,
+                successful_runs INTEGER DEFAULT 0,
+                failed_runs INTEGER DEFAULT 0,
+                last_successful_run TIMESTAMP,
+                last_failed_run TIMESTAMP
             )
         """)
         
@@ -70,7 +84,7 @@ def reinitialize_database():
         conn.execute("""
             CREATE TABLE pipeline_runs (
                 id INTEGER PRIMARY KEY,
-                pipeline_id INTEGER,
+                pipeline_id INTEGER NOT NULL,
                 pipeline_name TEXT NOT NULL,
                 start_time TIMESTAMP NOT NULL,
                 end_time TIMESTAMP,
@@ -86,7 +100,8 @@ def reinitialize_database():
                 normalize_start_time TIMESTAMP,
                 normalize_end_time TIMESTAMP,
                 load_start_time TIMESTAMP,
-                load_end_time TIMESTAMP
+                load_end_time TIMESTAMP,
+                FOREIGN KEY (pipeline_id) REFERENCES pipelines(id)
             )
         """)
         
@@ -94,7 +109,7 @@ def reinitialize_database():
         conn.execute("""
             CREATE TABLE pipeline_logs (
                 id INTEGER PRIMARY KEY,
-                pipeline_id INTEGER,
+                pipeline_id INTEGER NOT NULL,
                 run_id INTEGER,
                 event TEXT NOT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -108,9 +123,46 @@ def reinitialize_database():
                 start_time TIMESTAMP,
                 end_time TIMESTAMP,
                 row_counts TEXT,
-                full_trace_json TEXT
+                full_trace_json TEXT,
+                FOREIGN KEY (pipeline_id) REFERENCES pipelines(id),
+                FOREIGN KEY (run_id) REFERENCES pipeline_runs(id)
             )
         """)
+
+        # Create pipeline_log_relations table
+        conn.execute("""
+            CREATE TABLE pipeline_log_relations (
+                id INTEGER PRIMARY KEY,
+                pipeline_id INTEGER NOT NULL,
+                FOREIGN KEY (pipeline_id) REFERENCES pipelines(id)
+            )
+        """)
+
+        # Create scheduled_jobs table
+        conn.execute("""
+            CREATE TABLE scheduled_jobs (
+                id INTEGER PRIMARY KEY,
+                pipeline_name TEXT NOT NULL,
+                schedule INTEGER NOT NULL, 
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create scheduled_pipelines table
+        conn.execute("""
+            CREATE TABLE scheduled_pipelines (
+                id INTEGER PRIMARY KEY,
+                pipeline_name TEXT UNIQUE NOT NULL,
+                interval_minutes INTEGER NOT NULL
+            )
+        """)
+
+        # Create indexes for better query performance
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline_id ON pipeline_runs(pipeline_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pipeline_runs_start_time ON pipeline_runs(start_time);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pipeline_logs_run_id ON pipeline_logs(run_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_pipeline_logs_event ON pipeline_logs(event);")
         
         conn.commit()
     finally:
