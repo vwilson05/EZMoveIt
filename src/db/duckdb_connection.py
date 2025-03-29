@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 # Define database path
-DB_PATH = Path(__file__).parent.parent.parent / "data" / "ezmoveit.db"
+DB_PATH = Path(__file__).parent.parent.parent / "data" / "EZMoveIt.duckdb"
 
 
 def get_connection():
