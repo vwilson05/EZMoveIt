@@ -159,7 +159,8 @@ def pipeline_creator_page():
                 # API Authentication
                 auth_type = st.selectbox(
                     "Authentication Type",
-                    ["None", "API Key", "OAuth2", "Basic Auth"]
+                    ["API Key", "OAuth2", "Basic Auth", "Bearer Token"],
+                    index=0
                 )
                 
                 # Initialize source_config with empty dict
@@ -195,6 +196,13 @@ def pipeline_creator_page():
                         "auth_type": "basic",
                         "username": username,
                         "password": password,
+                        "source_type": "rest_api"
+                    }
+                elif auth_type == "Bearer Token":
+                    bearer_token = st.text_input("Bearer Token", type="password")
+                    st.session_state.source_config = {
+                        "auth_type": "bearer",
+                        "bearer_token": bearer_token,
                         "source_type": "rest_api"
                     }
                 

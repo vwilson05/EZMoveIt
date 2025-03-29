@@ -47,6 +47,18 @@ def fetch_data_from_api(api_url, pipeline_name):
     headers = {}
     if "auth" in api_config:
         headers.update(api_config["auth"])
+    elif "auth_type" in api_config:
+        if api_config["auth_type"] == "api_key":
+            headers[api_config.get("api_key_header", "X-API-Key")] = api_config["api_key"]
+        elif api_config["auth_type"] == "bearer":
+            headers["Authorization"] = f"Bearer {api_config['bearer_token']}"
+        elif api_config["auth_type"] == "basic":
+            import base64
+            auth_string = f"{api_config['username']}:{api_config['password']}"
+            auth_bytes = auth_string.encode('ascii')
+            base64_bytes = base64.b64encode(auth_bytes)
+            base64_auth = base64_bytes.decode('ascii')
+            headers["Authorization"] = f"Basic {base64_auth}"
 
     response = requests.get(api_url, headers=headers, timeout=10)
     response.raise_for_status()
@@ -62,7 +74,7 @@ def fetch_data_from_api(api_url, pipeline_name):
         item["extracted_at"] = datetime.utcnow().isoformat()
     return data
 
-# For API, we’ll simply yield chunks in the resource functions.
+# For API, we'll simply yield chunks in the resource functions.
 def get_api_resource(pipeline_name, table_name, api_url):
     data = fetch_data_from_api(api_url, pipeline_name)
     api_config = load_api_config(pipeline_name)
