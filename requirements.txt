@@ -50,3 +50,4 @@ matplotlib
 pyodbc
 oracledb
 griffe
+streamlit-option-menu

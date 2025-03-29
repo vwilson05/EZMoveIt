@@ -1,0 +1,36 @@
+/* Dark Mode CSS */
+body {
+    background-color: #121212;
+    color: #FFFFFF;
+    font-family: 'Roboto', sans-serif;
+    font-size: 50px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: #CF6679; /* A red-ish tone for headings */
+}
+
+/* Buttons */
+.stButton > button {
+    background-color: #37474F; /* Dark gray-blue */
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+}
+
+/* Custom boxes */
+.custom-box {
+    border: 1px solid #444444;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    background-color: #1E1E1E;
+}
+
+/* Expanders and dynamic components */
+.st-expander {
+    border: 1px solid #444444;
+    border-radius: 8px;
+    background-color: #1E1E1E;
+}

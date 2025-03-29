@@ -1,0 +1,36 @@
+/* Light Mode CSS */
+body {
+    background-color: #FFFFFF;
+    color: #000000;
+    font-family: 'Roboto', sans-serif; /* Modern, clean font */
+    font-size: 20px; /* Slightly oversized */
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: #37474F; /* Blue-grey for headings */
+}
+
+/* Buttons */
+.stButton > button {
+    background-color: #37474F;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+}
+
+/* Custom boxes */
+.custom-box {
+    border: 1px solid #CCCCCC;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    background-color: #F0F2F6;
+}
+
+/* Expanders and dynamic components can also be styled */
+.st-expander {
+    border: 1px solid #CCCCCC;
+    border-radius: 8px;
+    background-color: #F9F9F9;
+}
