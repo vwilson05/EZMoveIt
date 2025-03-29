@@ -61,7 +61,8 @@ def reinitialize_database():
                 target_table TEXT,
                 dataset_name TEXT,
                 schedule TEXT,
-                last_run_status TEXT
+                last_run_status TEXT,
+                source_config TEXT
             )
         """)
         
