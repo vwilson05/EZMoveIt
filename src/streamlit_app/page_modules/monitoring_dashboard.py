@@ -278,12 +278,19 @@ def monitoring_dashboard():
         'status': lambda x: (x == 'failed').sum()
     }).round(2)
     
-    summary_df.columns = ['Success Rate (%)', 'Avg Duration (s)', 'Duration Std (s)', 
-                         'Avg Rows', 'Total Rows', 'Failed Runs']
-    summary_df = summary_df.reset_index()
+    # Create a new DataFrame with the correct column names
+    summary_df_new = pd.DataFrame({
+        'pipeline_name': summary_df.index,
+        'Success Rate (%)': summary_df[('status', '<lambda>')],
+        'Avg Duration (s)': summary_df[('duration', 'mean')],
+        'Duration Std (s)': summary_df[('duration', 'std')],
+        'Avg Rows': summary_df[('rows_processed', 'mean')],
+        'Total Rows': summary_df[('rows_processed', 'sum')],
+        'Failed Runs': summary_df[('status', '<lambda_1>')]
+    })
     
     st.dataframe(
-        summary_df,
+        summary_df_new,
         hide_index=True,
         column_config={
             'pipeline_name': 'Pipeline',
