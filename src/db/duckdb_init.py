@@ -1,15 +1,15 @@
 import duckdb
 import os
-
-# Ensure the data directory exists
-DATA_DIR = os.path.join(os.path.dirname(__file__), "../../data")
-os.makedirs(DATA_DIR, exist_ok=True)
+from pathlib import Path
 
 # Define database path
-DB_PATH = os.path.join(DATA_DIR, "EZMoveIt.duckdb")
+DB_PATH = Path(__file__).parent.parent.parent / "data" / "ezmoveit.db"
+
+# Ensure the data directory exists
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Connect to DuckDB
-con = duckdb.connect(DB_PATH)
+con = duckdb.connect(str(DB_PATH))
 
 # Drop tables in dependency order
 con.execute("DROP TABLE IF EXISTS pipeline_log_relations")
@@ -24,14 +24,16 @@ con.execute("""
 CREATE TABLE pipelines (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,
-    source_url TEXT,
-    snowflake_target TEXT,
-    schedule TEXT,           
+    source_url TEXT NOT NULL,
+    target_table TEXT NOT NULL,
+    dataset_name TEXT NOT NULL,
+    schedule TEXT,
     last_run_status TEXT,
+    source_config TEXT,
+    snowflake_target TEXT,
     last_run_log TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    dataset_name TEXT,
     api_key TEXT,
     headers TEXT,
     total_runs INTEGER DEFAULT 0,
