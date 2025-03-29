@@ -20,7 +20,7 @@ def get_pipeline_names():
 def get_pipeline_details(pipeline_id):
     """Get pipeline details by ID."""
     query = """
-    SELECT name, dataset_name, target_table, source_url
+    SELECT name, dataset_name, target_table, source_url, source_config
     FROM pipelines
     WHERE id = ?
     """
@@ -30,7 +30,8 @@ def get_pipeline_details(pipeline_id):
             'name': result[0][0],
             'dataset_name': result[0][1],
             'target_table': result[0][2],
-            'source_url': result[0][3]
+            'source_url': result[0][3],
+            'source_config': result[0][4]
         }
     return None
 
@@ -73,6 +74,22 @@ def pipeline_editor_page():
     st.subheader("🔧 Source Configuration")
     source_url = st.text_input("Source URL", value=pipeline_details['source_url'])
     
+    # Load existing source config
+    source_config = json.loads(pipeline_details['source_config']) if pipeline_details['source_config'] else {}
+    
+    # Authentication settings
+    if source_config.get('auth_type') == 'bearer':
+        st.subheader("🔑 Authentication")
+        # Extract token from auth.Authorization if it exists
+        current_token = ""
+        if 'auth' in source_config and 'Authorization' in source_config['auth']:
+            current_token = source_config['auth']['Authorization'].replace('Bearer ', '')
+        bearer_token = st.text_input("Bearer Token", type="password", value="********" if current_token else "")
+        if bearer_token != "********":
+            source_config['auth'] = {
+                "Authorization": f"Bearer {bearer_token}"
+            }
+    
     # Action buttons
     col1, col2 = st.columns(2)
     
@@ -86,10 +103,11 @@ def pipeline_editor_page():
                     SET name = ?, 
                         dataset_name = ?, 
                         target_table = ?,
-                        source_url = ?
+                        source_url = ?,
+                        source_config = ?
                     WHERE id = ?
                     """,
-                    (name, dataset_name, target_table, source_url, pipeline_id)
+                    (name, dataset_name, target_table, source_url, json.dumps(source_config), pipeline_id)
                 )
                 
                 # Update source config
@@ -102,7 +120,7 @@ def pipeline_editor_page():
                 st.success("Pipeline updated successfully!")
                 st.rerun()  # Refresh the page to show updated data
             except Exception as e:
-                st.error(f"Failed to update pipeline: {str(e)}")
+                st.error(f"Error updating pipeline: {str(e)}")
     
     with col2:
         if st.button("❌ Cancel Edit"):

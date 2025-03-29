@@ -202,7 +202,9 @@ def pipeline_creator_page():
                     bearer_token = st.text_input("Bearer Token", type="password")
                     st.session_state.source_config = {
                         "auth_type": "bearer",
-                        "bearer_token": bearer_token,
+                        "auth": {
+                            "Authorization": f"Bearer {bearer_token}"
+                        },
                         "source_type": "rest_api"
                     }
                 
@@ -326,8 +328,8 @@ def pipeline_creator_page():
                     # Insert pipeline record
                     query = """
                     INSERT INTO pipelines (
-                        id, name, source_url, target_table, dataset_name, schedule
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        id, name, source_url, target_table, dataset_name, schedule, source_config
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """
                     schedule = None
                     if st.session_state.schedule_option != "Manual":
@@ -347,7 +349,8 @@ def pipeline_creator_page():
                             st.session_state.source_url,
                             st.session_state.target_table,
                             st.session_state.dataset_name,
-                            json.dumps(schedule) if schedule else None
+                            json.dumps(schedule) if schedule else None,
+                            json.dumps(st.session_state.source_config)
                         )
                     )
                     
@@ -385,8 +388,8 @@ def pipeline_creator_page():
                     # Insert pipeline record
                     query = """
                     INSERT INTO pipelines (
-                        id, name, source_url, target_table, dataset_name, schedule
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        id, name, source_url, target_table, dataset_name, schedule, source_config
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """
                     schedule = None
                     if st.session_state.schedule_option != "Manual":
@@ -406,7 +409,8 @@ def pipeline_creator_page():
                             st.session_state.source_url,
                             target_table,
                             dataset_name,
-                            json.dumps(schedule) if schedule else None
+                            json.dumps(schedule) if schedule else None,
+                            json.dumps(st.session_state.source_config)
                         )
                     )
                     
