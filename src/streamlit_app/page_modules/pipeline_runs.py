@@ -8,8 +8,19 @@ from src.pipelines.dlt_pipeline import run_pipeline_with_creds
 import json
 import os
 import threading
+import logging
 
 REFRESH_INTERVAL = 10  # seconds
+
+def get_progress_for_status(status):
+    if status == 'completed':
+        return 100
+    elif status == 'running':
+        return 50
+    elif status == 'failed':
+        return 100  # Still show full bar but in error styling
+    else:  # pending or None
+        return 0
 
 def get_pipeline_names():
     """Get unique pipeline names for the dropdown."""
@@ -34,7 +45,13 @@ def get_pipeline_runs(filters=None):
         pr.load_status,
         p.dataset_name,
         p.target_table,
-        p.source_url
+        p.source_url,
+        pr.total_rows,
+        pr.total_chunks,
+        pr.processed_chunks,
+        pr.processed_rows,
+        pr.current_chunk,
+        pr.estimated_completion
     FROM pipeline_runs pr
     LEFT JOIN pipelines p ON pr.pipeline_id = p.id
     WHERE 1=1
@@ -76,7 +93,14 @@ def pipeline_runs_page():
     st.session_state.current_page = "Pipeline Runs"
     
     st.title("🔄 Pipeline Runs")
-    st.caption("Track pipeline execution status and performance. Auto-refresh is on.")
+    
+    # Add a refresh button at the top right
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        st.caption("Track pipeline execution status and performance. Auto-refresh is on.")
+    with col2:
+        if st.button("🔄 Refresh Now", key="manual_refresh"):
+            st.rerun()
     
     # Refresh timer
     st_autorefresh = st.empty()
@@ -130,7 +154,8 @@ def pipeline_runs_page():
         "id", "pipeline_name", "start_time", "end_time", "status",
         "duration", "rows_processed", "error_message", "extract_status",
         "normalize_status", "load_status", "dataset_name", "target_table",
-        "source_url"
+        "source_url", "total_rows", "total_chunks", "processed_chunks",
+        "processed_rows", "current_chunk", "estimated_completion"
     ])
     
     # Debug info for chart data
@@ -151,7 +176,7 @@ def pipeline_runs_page():
         st.metric("Failed", len(df[df['status'] == 'failed']))
     
     # Display runs table
-    st.subheader("📋 Pipeline Runs")
+    st.subheader("📋 Past Pipeline Runs")
     
     # Format the DataFrame for display
     display_df = df.copy()
@@ -194,133 +219,131 @@ def pipeline_runs_page():
                     st.button("Running...", key=f"disabled_{row['id']}", disabled=True)
                 else:
                     if st.button(f"Run {row['pipeline_name']}", key=f"trigger_{row['id']}"):
-                        creds = st.session_state.get("snowflake_creds")
-                        if not creds:
-                            st.error("No Snowflake credentials found. Please enter them above.")
-                        else:
-                            # Create containers for different stages with custom styling
-                            st.markdown("""
-                                <style>
-                                .stProgress > div > div > div > div {
-                                    background-color: #1f77b4;
-                                }
-                                .stProgress > div > div > div > div:nth-child(2) {
-                                    background-color: #2ca02c;
-                                }
-                                .stProgress > div > div > div > div:nth-child(3) {
-                                    background-color: #ff7f0e;
-                                }
-                                </style>
-                            """, unsafe_allow_html=True)
+                        # Create a container for pipeline progress
+                        progress_container = st.container()
+                        
+                        # Capture credentials before starting the thread
+                        if "snowflake_creds" not in st.session_state:
+                            st.error("No Snowflake credentials found. Please set them in the Settings page first.")
+                            return
                             
-                            # Create a container for pipeline progress
-                            progress_container = st.container()
+                        # Make a deep copy of credentials to ensure thread safety
+                        thread_creds = {
+                            'username': st.session_state.snowflake_creds['username'],
+                            'password': st.session_state.snowflake_creds['password'],
+                            'host': st.session_state.snowflake_creds['host'],
+                            'role': st.session_state.snowflake_creds['role'],
+                            'database': st.session_state.snowflake_creds['database'],
+                            'session_keep_alive': st.session_state.snowflake_creds.get('session_keep_alive', True)
+                        }
+                        
+                        with progress_container:
+                            st.markdown("### Pipeline Progress")
                             
-                            with progress_container:
-                                st.markdown("### Pipeline Progress")
-                                
-                                # Extract stage
-                                extract_container = st.empty()
-                                extract_status_text = st.empty()
-                                
-                                # Normalize stage
-                                normalize_container = st.empty()
-                                normalize_status_text = st.empty()
-                                
-                                # Load stage
-                                load_container = st.empty()
-                                load_status_text = st.empty()
-                                
-                                # Overall status and metrics
-                                status_container = st.empty()
-                                metrics_container = st.empty()
-                                
-                                result_container = {"status": "Pipeline started...", "result": None}
+                            # Extract stage
+                            extract_container = st.empty()
+                            extract_status_text = st.empty()
+                            
+                            # Normalize stage
+                            normalize_container = st.empty()
+                            normalize_status_text = st.empty()
+                            
+                            # Load stage
+                            load_container = st.empty()
+                            load_status_text = st.empty()
+                            
+                            # Overall status and metrics
+                            status_container = st.empty()
+                            metrics_container = st.empty()
+                            
+                            result_container = {"status": "Pipeline started...", "result": None}
 
-                                def run_pipeline_thread():
-                                    result_container["status"] = "Pipeline started..."
-                                    res = run_pipeline_with_creds(row['pipeline_name'], row['dataset_name'], row['target_table'], creds)
-                                    if res is not None:
-                                        result_container["status"] = f"Pipeline completed: {res} rows loaded."
-                                        result_container["result"] = res
-                                    else:
-                                        result_container["status"] = "Pipeline failed. Check logs."
+                            def run_pipeline_thread(creds):
+                                result_container["status"] = "Pipeline started..."
+                                logging.info("Thread using credentials: %s", 
+                                           {k: v for k, v in creds.items() if k != 'password'})
+                                res = run_pipeline_with_creds(row['pipeline_name'], row['dataset_name'], 
+                                                           row['target_table'], creds)
+                                if res is not None:
+                                    result_container["status"] = f"Pipeline completed: {res} rows loaded."
+                                    result_container["result"] = res
+                                else:
+                                    result_container["status"] = "Pipeline failed. Check logs."
 
-                                pipeline_thread = threading.Thread(target=run_pipeline_thread, daemon=True)
-                                pipeline_thread.start()
+                            pipeline_thread = threading.Thread(target=run_pipeline_thread, args=(thread_creds,), daemon=True)
+                            pipeline_thread.start()
 
-                                # Update UI with progress
-                                while pipeline_thread.is_alive():
-                                    # Get current run status
-                                    run_status = execute_query(
-                                        """
-                                        SELECT status, extract_status, normalize_status, load_status, 
-                                               duration, rows_processed
-                                        FROM pipeline_runs 
-                                        WHERE pipeline_name = ? 
-                                        ORDER BY start_time DESC 
-                                        LIMIT 1
-                                        """,
-                                        (row['pipeline_name'],),
-                                        fetch=True
-                                    )
+                            # Update UI with progress
+                            while pipeline_thread.is_alive():
+                                run_status = execute_query(
+                                    """
+                                    SELECT status, extract_status, normalize_status, load_status, 
+                                           duration, rows_processed
+                                    FROM pipeline_runs 
+                                    WHERE pipeline_name = ? 
+                                    ORDER BY start_time DESC 
+                                    LIMIT 1
+                                    """,
+                                    (row['pipeline_name'],),
+                                    fetch=True
+                                )
+                                
+                                if run_status:
+                                    status, extract_status, normalize_status, load_status, duration, rows = run_status[0]
                                     
-                                    if run_status:
-                                        status, extract_status, normalize_status, load_status, duration, rows = run_status[0]
-                                        
-                                        # Update extract progress
-                                        extract_container.progress(100 if extract_status == 'completed' else 50)
-                                        extract_status_text.markdown(f"**Extract:** {extract_status}")
-                                        
-                                        # Update normalize progress
-                                        normalize_container.progress(100 if normalize_status == 'completed' else 50)
-                                        normalize_status_text.markdown(f"**Normalize:** {normalize_status}")
-                                        
-                                        # Update load progress
-                                        load_container.progress(100 if load_status == 'completed' else 50)
-                                        load_status_text.markdown(f"**Load:** {load_status}")
-                                        
-                                        # Update overall status
-                                        status_container.info(f"**Status:** {status}")
-                                        
-                                        # Update metrics if available
-                                        if duration and rows:
-                                            metrics_container.markdown(f"""
-                                                ### 📊 Current Metrics
-                                                - **Duration:** {duration:.2f} seconds
-                                                - **Rows Processed:** {rows:,}
-                                            """)
+                                    # Update extract progress
+                                    extract_container.progress(get_progress_for_status(extract_status))
+                                    extract_status_text.markdown(f"**Extract:** {extract_status}")
                                     
-                                    time.sleep(0.5)
-
-                                # Final update
-                                if result_container["result"] is not None:
-                                    extract_status_text.markdown("✅ **Extraction complete**")
-                                    normalize_status_text.markdown("✅ **Normalization complete**")
-                                    load_status_text.markdown("✅ **Load complete**")
-                                    status_container.success(result_container["status"])
+                                    # Update normalize progress
+                                    normalize_container.progress(get_progress_for_status(normalize_status))
+                                    normalize_status_text.markdown(f"**Normalize:** {normalize_status}")
                                     
-                                    # Show final metrics
-                                    final_metrics = execute_query(
-                                        """
-                                        SELECT duration, rows_processed
-                                        FROM pipeline_runs 
-                                        WHERE pipeline_name = ? 
-                                        ORDER BY start_time DESC 
-                                        LIMIT 1
-                                        """,
-                                        (row['pipeline_name'],),
-                                        fetch=True
-                                    )
+                                    # Update load progress
+                                    load_container.progress(get_progress_for_status(load_status))
+                                    load_status_text.markdown(f"**Load:** {load_status}")
                                     
-                                    if final_metrics:
-                                        duration, rows = final_metrics[0]
+                                    # Update overall status
+                                    status_container.info(f"**Status:** {status}")
+                                    
+                                    # Update metrics if available
+                                    if duration and rows:
                                         metrics_container.markdown(f"""
-                                            ### 📊 Final Metrics
+                                            ### 📊 Current Metrics
                                             - **Duration:** {duration:.2f} seconds
                                             - **Rows Processed:** {rows:,}
-                                            - **Rows/Second:** {rows/duration:.2f}
                                         """)
+                                
+                                time.sleep(0.5)
+
+                            # Final update
+                            if result_container["result"] is not None:
+                                extract_status_text.markdown("✅ **Extraction complete**")
+                                normalize_status_text.markdown("✅ **Normalization complete**")
+                                load_status_text.markdown("✅ **Load complete**")
+                                status_container.success(result_container["status"])
+                                
+                                # Show final metrics
+                                final_metrics = execute_query(
+                                    """
+                                    SELECT duration, rows_processed
+                                    FROM pipeline_runs 
+                                    WHERE pipeline_name = ? 
+                                    ORDER BY start_time DESC 
+                                    LIMIT 1
+                                    """,
+                                    (row['pipeline_name'],),
+                                    fetch=True
+                                )
+                                
+                                if final_metrics:
+                                    duration, rows = final_metrics[0]
+                                    metrics_container.markdown(f"""
+                                        ### 📊 Final Metrics
+                                        - **Duration:** {duration:.2f} seconds
+                                        - **Rows Processed:** {rows:,}
+                                        - **Rows/Second:** {rows/duration:.2f}
+                                    """)
             
             with col2:
                 if st.button("✏️ Edit Pipeline", key=f"edit_{row['id']}"):
@@ -367,6 +390,100 @@ def pipeline_runs_page():
         st.altair_chart(rows_chart, use_container_width=True)
     else:
         st.info("No rows processed data available for the selected filters.")
+    
+    # After the metrics section, add this special section for running pipelines
+    running_pipelines = df[df['status'] == 'running']
+    if not running_pipelines.empty:
+        st.subheader("🏃‍♂️ Currently Running Pipelines")
+        
+        # Custom styling for progress bars
+        st.markdown("""
+            <style>
+            .stProgress > div > div > div > div {
+                background-color: #1f77b4;  /* Extract color */
+            }
+            .stProgress > div > div > div > div:nth-child(2) {
+                background-color: #2ca02c;  /* Normalize color */
+            }
+            .stProgress > div > div > div > div:nth-child(3) {
+                background-color: #ff7f0e;  /* Load color */
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        
+        # Create a progress tracker for each running pipeline
+        for _, row in running_pipelines.iterrows():
+            with st.expander(f"🔄 {row['pipeline_name']} - Running", expanded=True):
+                st.markdown(f"**Dataset:** `{row['dataset_name']}` | **Target Table:** `{row['target_table']}`")
+                
+                # Add chunk progress information
+                if row['total_chunks'] and row['total_chunks'] > 0:
+                    # Calculate percentage and ensure it's between 0-100
+                    chunk_percent = min(100, int((row['processed_chunks'] / row['total_chunks']) * 100))
+                    
+                    # Display progress bar
+                    progress_container = st.container()
+                    with progress_container:
+                        st.progress(chunk_percent / 100)
+                        
+                        # Create two columns for metrics
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Progress", f"{chunk_percent}%")
+                            st.metric("Chunks", f"{row['processed_chunks']} of {row['total_chunks']}")
+                        
+                        with col2:
+                            st.metric("Rows Processed", f"{row['processed_rows']:,} of {row['total_rows']:,}")
+                            
+                            # Calculate and show rate if we have processed rows
+                            if row['processed_rows'] > 0 and row['start_time']:
+                                start_time = pd.to_datetime(row['start_time'])
+                                elapsed_seconds = (datetime.now() - start_time).total_seconds()
+                                if elapsed_seconds > 0:
+                                    rate = row['processed_rows'] / elapsed_seconds
+                                    st.metric("Rows/Second", f"{rate:.1f}")
+                    
+                    # Show estimated completion time if available
+                    if row['estimated_completion']:
+                        est_time = pd.to_datetime(row['estimated_completion'])
+                        time_remaining = (est_time - datetime.now()).total_seconds()
+                        if time_remaining > 0:
+                            minutes, seconds = divmod(int(time_remaining), 60)
+                            hours, minutes = divmod(minutes, 60)
+                            time_str = f"{hours}h {minutes}m {seconds}s" if hours > 0 else f"{minutes}m {seconds}s"
+                            st.info(f"⏱️ Estimated completion in: {time_str}")
+                
+                # Extract progress
+                extract_status = row['extract_status'] or 'pending'
+                extract_container = st.empty()
+                extract_progress = get_progress_for_status(extract_status)
+                extract_container.progress(extract_progress)
+                st.markdown(f"**Extract:** {extract_status}")
+                
+                # Normalize progress
+                normalize_status = row['normalize_status'] or 'pending'
+                normalize_container = st.empty()
+                normalize_progress = get_progress_for_status(normalize_status)
+                normalize_container.progress(normalize_progress)
+                st.markdown(f"**Normalize:** {normalize_status}")
+                
+                # Load progress
+                load_status = row['load_status'] or 'pending'
+                load_container = st.empty()
+                load_progress = get_progress_for_status(load_status)
+                load_container.progress(load_progress)
+                st.markdown(f"**Load:** {load_status}")
+                
+                # Show start time and running duration
+                if row['start_time']:
+                    start_time = pd.to_datetime(row['start_time'])
+                    current_time = datetime.now()
+                    running_duration = (current_time - start_time).total_seconds()
+                    st.markdown(f"**Started at:** {start_time.strftime('%Y-%m-%d %H:%M:%S')} | **Running for:** {running_duration:.2f} seconds")
+                
+                # Show any rows processed so far if available
+                if row['rows_processed']:
+                    st.markdown(f"**Rows processed so far:** {row['rows_processed']:,}")
     
     # Auto-refresh using JavaScript to avoid flickering
     st.markdown(

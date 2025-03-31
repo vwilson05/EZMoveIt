@@ -13,9 +13,9 @@ from src.sources.api_source import fetch_data_from_api, load_api_config, get_api
 from src.sources.database_source import fetch_data_from_database, load_db_config
 from src.sources.storage_source import fetch_data_from_s3
 from src.db.duckdb_connection import execute_query
-from config.slack_config import load_slack_config
+# from config.slack_config import load_slack_config
 
-load_slack_config()
+# load_slack_config()
 
 import os
 os.environ["PROGRESS"] = "log" 
@@ -201,7 +201,7 @@ def log_pipeline_execution(pipeline_name: str, table_name: str, dataset_name: st
         logging.error(f"Failed to log pipeline execution: {str(e)}")
 
 
-def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
+def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str, run_id: int = None):
     start_time = time.time()
     result = execute_query("SELECT id, source_url FROM pipelines WHERE name = ?", (pipeline_name,), fetch=True)
     if not result:
@@ -254,7 +254,11 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
         ("postgres", "mysql", "bigquery", "redshift", "mssql", "microsoft_sqlserver", "oracle")
     ):
         logging.info('Loading database configuration...')
-        data_to_run = fetch_data_from_database(pipeline_name)
+        db_config = load_db_config(pipeline_name)
+        # Log performance settings
+        logging.info(f"Performance settings: parallel={db_config.get('use_parallel', True)}, "
+                    f"chunk_size={db_config.get('chunk_size', 100000)}")
+        data_to_run = fetch_data_from_database(pipeline_name, run_id)
     else:
         logging.error(f"Unsupported source type for URL: {source_url}")
         return None
@@ -278,7 +282,6 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str):
     if source_url_lower.startswith("http"):
         write_disposition = None  # Already set in the resource function.
     else:
-        db_config = load_db_config(pipeline_name)
         incremental_type = db_config.get("incremental_type", "FULL").upper()
         if incremental_type == "FULL":
             write_disposition = "replace"

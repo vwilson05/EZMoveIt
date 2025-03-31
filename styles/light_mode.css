@@ -10,13 +10,107 @@ h1, h2, h3, h4, h5, h6 {
     color: #37474F; /* Blue-grey for headings */
 }
 
+/* Base theme colors */
+:root {
+    --background-color: #ffffff;
+    --box-background: #f8f9fa;
+    --box-border: #e9ecef;
+    --accent-color: #0068c9;
+    --text-color: #000000;
+    --secondary-text: #424242;
+    --nav-background: #f0f2f6;
+}
+
+/* Main app background */
+.main .block-container {
+    background-color: var(--background-color) !important;
+}
+
+/* Navigation sidebar */
+section[data-testid="stSidebar"] {
+    background-color: var(--nav-background) !important;
+}
+
+section[data-testid="stSidebar"] .stButton > button {
+    background-color: var(--accent-color) !important;
+    color: white !important;
+    border: none !important;
+}
+
+/* Remove yellow warning bar */
+.stWarning {
+    display: none !important;
+}
+
 /* Buttons */
 .stButton > button {
-    background-color: #37474F;
-    color: #FFFFFF;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 20px;
+    background-color: var(--accent-color) !important;
+    color: white !important;
+    border: none !important;
+}
+
+/* Form fields */
+div[data-baseweb="input"] {
+    background-color: var(--box-background) !important;
+}
+
+div[data-baseweb="input"] input {
+    background-color: var(--box-background) !important;
+    color: var(--text-color) !important;
+}
+
+/* Select boxes */
+div[data-baseweb="select"] {
+    background-color: var(--box-background) !important;
+}
+
+div[data-baseweb="select"] input {
+    background-color: var(--box-background) !important;
+    color: var(--text-color) !important;
+}
+
+/* Labels and text */
+label, .stMarkdown p, .stMarkdown span {
+    color: var(--text-color) !important;
+}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-color) !important;
+}
+
+/* Input labels */
+.stTextInput label, 
+.stSelectbox label, 
+.stDateInput label, 
+.stNumberInput label {
+    color: var(--text-color) !important;
+}
+
+/* Radio buttons */
+.stRadio label {
+    color: var(--text-color) !important;
+}
+
+/* Checkboxes */
+.stCheckbox label {
+    color: var(--text-color) !important;
+}
+
+/* Data frames and tables */
+.stDataFrame {
+    color: var(--text-color) !important;
+}
+
+/* Metrics */
+[data-testid="stMetricValue"] {
+    color: var(--text-color) !important;
+}
+
+/* Expanders */
+.streamlit-expanderHeader {
+    background-color: var(--box-background) !important;
+    color: var(--text-color) !important;
 }
 
 /* Custom boxes */
@@ -33,4 +127,250 @@ h1, h2, h3, h4, h5, h6 {
     border: 1px solid #CCCCCC;
     border-radius: 8px;
     background-color: #F9F9F9;
+}
+
+/* Light theme variables */
+:root {
+    --background-color: #ffffff;
+    --box-background: #f8f9fa;  /* Lighter grey for form fields */
+    --box-border: #e9ecef;      /* Subtle border */
+    --accent-color: #0068c9;    /* Blue */
+    --text-color: #000000;
+    --secondary-text: #424242;
+    --nav-background: #f0f2f6;  /* Light grey for nav */
+}
+
+/* Navigation styling */
+.stSidebar {
+    background-color: var(--nav-background) !important;
+}
+
+.stSidebar .stButton button {
+    background-color: var(--accent-color) !important;
+    color: white !important;
+    border: none !important;
+}
+
+/* All buttons */
+.stButton button {
+    background-color: var(--accent-color) !important;
+    color: white !important;
+    border: none !important;
+}
+
+/* Form fields and labels */
+.stTextInput label, .stSelectbox label, .stDateInput label, .stRadio label {
+    color: var(--text-color) !important;
+}
+
+.stTextInput input, .stSelectbox select, .stDateInput input {
+    background-color: var(--box-background) !important;
+    border: 1px solid var(--box-border) !important;
+    color: var(--text-color) !important;
+}
+
+/* Radio buttons and checkboxes */
+.stRadio > div[role="radiogroup"] > label {
+    color: var(--text-color) !important;
+}
+
+.stCheckbox > div[role="checkbox"] > label {
+    color: var(--text-color) !important;
+}
+
+/* Headers and text */
+h1, h2, h3, h4, h5, h6, .stMarkdown {
+    color: var(--text-color) !important;
+}
+
+/* Expander */
+.streamlit-expanderHeader {
+    background-color: var(--box-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--box-border) !important;
+}
+
+/* Data display elements */
+.stDataFrame {
+    background-color: var(--box-background) !important;
+    border: 1px solid var(--box-border) !important;
+}
+
+/* Status messages */
+.stAlert {
+    background-color: var(--box-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--box-border) !important;
+}
+
+/* Metrics */
+.stMetric {
+    background-color: var(--box-background) !important;
+    color: var(--text-color) !important;
+}
+
+/* Progress bars */
+.stProgress > div > div > div > div {
+    background-color: var(--accent-color) !important;
+}
+
+/* Component styles */
+.stApp {
+    background-color: var(--background-color);
+    color: var(--text-color);
+}
+
+/* Add more component styles */
+
+/* Checkbox labels and text input labels */
+.stCheckbox label p, 
+div[data-testid="stForm"] label,
+.stTextInput label {
+    color: var(--text-color) !important;
+}
+
+/* ALL buttons - using very specific selectors to override any existing styles */
+button[kind="primary"],
+.stButton > button,
+.stForm button[type="submit"],
+div[data-testid="stForm"] button[type="submit"],
+div.element-container div.stButton > button,
+div.row-widget.stButton > button {
+    background-color: #0d6efd !important;  /* Royal blue */
+    border: 1px solid #0a58ca !important;  /* Darker blue border */
+    color: white !important;
+    transition: all 0.2s ease !important;
+}
+
+/* ALL button hover states */
+button[kind="primary"]:hover,
+.stButton > button:hover,
+.stForm button[type="submit"]:hover,
+div[data-testid="stForm"] button[type="submit"]:hover,
+div.element-container div.stButton > button:hover,
+div.row-widget.stButton > button:hover {
+    background-color: #0a58ca !important;  /* Darker blue on hover */
+    border-color: #0a53be !important;
+}
+
+/* ALL button focus states */
+button[kind="primary"]:focus,
+.stButton > button:focus,
+.stForm button[type="submit"]:focus,
+div[data-testid="stForm"] button[type="submit"]:focus,
+div.element-container div.stButton > button:focus,
+div.row-widget.stButton > button:focus {
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25) !important;  /* Blue glow */
+    outline: none !important;
+}
+
+/* Remove any conflicting styles */
+.stButton > button {
+    background-color: #0d6efd !important;  /* Explicitly override any other colors */
+}
+
+/* Form fields and inputs */
+div[data-baseweb="input"] input,
+div[data-baseweb="textarea"] textarea {
+    background-color: var(--box-background) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--box-border) !important;
+}
+
+/* Container backgrounds */
+div[data-testid="stForm"] {
+    background-color: var(--box-background) !important;
+    border: 1px solid var(--box-border) !important;
+    border-radius: 4px;
+    padding: 1rem;
+}
+
+/* All text elements */
+.stMarkdown p,
+.stMarkdown span,
+.stMarkdown div,
+label span p,
+.stTextInput label span,
+.stNumberInput label span,
+.stCheckbox label span {
+    color: var(--text-color) !important;
+}
+
+/* Button styling - only in light mode */
+.stButton>button {
+    background-color: #00B7C2 !important;
+    color: white !important;
+    border: none !important;
+}
+
+.stButton>button:hover {
+    background-color: #009DA6 !important;
+    border: none !important;
+}
+
+/* Form field labels and text - ensure black text in light mode */
+.stCheckbox label p, 
+div[data-testid="stForm"] label,
+.stTextInput label,
+.stMarkdown p,
+.stMarkdown span,
+.stMarkdown div,
+label span p,
+.stTextInput label span,
+.stNumberInput label span,
+.stCheckbox label span {
+    color: black !important;
+}
+
+/* Container styling */
+div[data-testid="stForm"], 
+div.stMarkdown div[data-testid="stExpander"] {
+    background-color: #f8f9fa !important;
+    border: 1px solid #0d6efd !important;
+    border-radius: 4px;
+    padding: 1rem;
+}
+
+/* Navigation menu items */
+.st-emotion-cache-1r4qj8v,  /* Main nav container */
+.st-emotion-cache-1dp5vir {  /* Individual nav items */
+    background-color: #f8f9fa !important;
+    border-color: #0d6efd !important;
+    color: black !important;
+}
+
+/* Navigation hover states */
+.st-emotion-cache-1dp5vir:hover {
+    background-color: #e9ecef !important;
+    border-color: #0a58ca !important;
+}
+
+/* Form field labels and text */
+.stCheckbox label p, 
+div[data-testid="stForm"] label,
+.stTextInput label,
+.stMarkdown p,
+.stMarkdown span,
+.stMarkdown div,
+label span p,
+.stTextInput label span,
+.stNumberInput label span,
+.stCheckbox label span {
+    color: black !important;
+}
+
+/* Form fields */
+div[data-baseweb="input"] input,
+div[data-baseweb="textarea"] textarea,
+div[data-baseweb="select"] div {
+    background-color: white !important;
+    border: 1px solid #dee2e6 !important;
+    color: black !important;
+}
+
+/* Form field hover states */
+div[data-baseweb="input"]:hover,
+div[data-baseweb="textarea"]:hover,
+div[data-baseweb="select"]:hover {
+    border-color: #0d6efd !important;
 }

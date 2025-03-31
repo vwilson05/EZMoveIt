@@ -10,13 +10,38 @@ h1, h2, h3, h4, h5, h6 {
     color: #CF6679; /* A red-ish tone for headings */
 }
 
-/* Buttons */
-.stButton > button {
-    background-color: #37474F; /* Dark gray-blue */
-    color: #FFFFFF;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 20px;
+/* Reset ALL button styles to Streamlit defaults */
+button[kind="primary"],
+.stButton > button,
+.stForm button[type="submit"],
+div[data-testid="stForm"] button[type="submit"],
+div.element-container div.stButton > button,
+div.row-widget.stButton > button {
+    background-color: initial !important;
+    border-color: initial !important;
+    color: initial !important;
+}
+
+/* Remove any custom hover effects */
+button[kind="primary"]:hover,
+.stButton > button:hover,
+.stForm button[type="submit"]:hover,
+div[data-testid="stForm"] button[type="submit"]:hover,
+div.element-container div.stButton > button:hover,
+div.row-widget.stButton > button:hover {
+    background-color: initial !important;
+    border-color: initial !important;
+}
+
+/* Reset focus states */
+button[kind="primary"]:focus,
+.stButton > button:focus,
+.stForm button[type="submit"]:focus,
+div[data-testid="stForm"] button[type="submit"]:focus,
+div.element-container div.stButton > button:focus,
+div.row-widget.stButton > button:focus {
+    box-shadow: initial !important;
+    outline: initial !important;
 }
 
 /* Custom boxes */
@@ -33,4 +58,58 @@ h1, h2, h3, h4, h5, h6 {
     border: 1px solid #444444;
     border-radius: 8px;
     background-color: #1E1E1E;
+}
+
+/* Dark theme variables */
+:root {
+    --background-color: #0e1117;
+    --box-background: #262730;
+    --box-border: #31333F;
+    --accent-color: #ff4b4b;  /* red */
+    --text-color: #ffffff;
+    --secondary-text: #808495;
+}
+
+/* Component-specific styles */
+.stDataFrame {
+    border: 1px solid var(--border-color);
+}
+
+.stAlert {
+    background-color: var(--accent-color);
+    border: 1px solid var(--border-color);
+}
+
+/* Add more component styles */
+.custom-card {
+    background-color: var(--accent-color);
+    border-radius: 10px;
+    padding: 20px;
+    margin: 10px 0;
+}
+
+/* Component styles */
+.stApp {
+    background-color: var(--background-color);
+    color: var(--text-color);
+}
+
+.stTextInput input, .stSelectBox, .stDateInput {
+    background-color: var(--box-background) !important;
+    border-color: var(--box-border) !important;
+    color: var(--text-color) !important;
+}
+
+/* Ensure text is white in dark mode */
+.stCheckbox label p, 
+div[data-testid="stForm"] label,
+.stTextInput label,
+.stMarkdown p,
+.stMarkdown span,
+.stMarkdown div,
+label span p,
+.stTextInput label span,
+.stNumberInput label span,
+.stCheckbox label span {
+    color: white !important;
 }

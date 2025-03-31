@@ -11,15 +11,17 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 # Connect to DuckDB
 con = duckdb.connect(str(DB_PATH))
 
-# Drop tables in dependency order
-con.execute("DROP TABLE IF EXISTS pipeline_log_relations")
-con.execute("DROP TABLE IF EXISTS pipeline_logs")
-con.execute("DROP TABLE IF EXISTS pipeline_runs")
-con.execute("DROP TABLE IF EXISTS pipelines")
-con.execute("DROP TABLE IF EXISTS scheduled_jobs")
-con.execute("DROP TABLE IF EXISTS scheduled_pipelines")
+# First, check if tables exist and drop all foreign key constraints before dropping tables
+con.execute("""
+DROP TABLE IF EXISTS pipeline_log_relations;
+DROP TABLE IF EXISTS pipeline_logs;
+DROP TABLE IF EXISTS pipeline_runs;
+DROP TABLE IF EXISTS pipelines;
+DROP TABLE IF EXISTS scheduled_jobs;
+DROP TABLE IF EXISTS scheduled_pipelines;
+""")
 
-# Create pipelines table with additional fields
+# Create pipelines table with additional fields (no foreign keys)
 con.execute("""
 CREATE TABLE pipelines (
     id INTEGER PRIMARY KEY,
@@ -44,7 +46,7 @@ CREATE TABLE pipelines (
 );
 """)
 
-# Create pipeline_runs table for detailed run tracking
+# Create pipeline_runs table with new columns for progress tracking (no foreign keys)
 con.execute("""
 CREATE TABLE pipeline_runs (
     id INTEGER PRIMARY KEY,
@@ -65,11 +67,18 @@ CREATE TABLE pipeline_runs (
     normalize_end_time TIMESTAMP,
     load_start_time TIMESTAMP,
     load_end_time TIMESTAMP,
-    FOREIGN KEY (pipeline_id) REFERENCES pipelines(id)
+    -- New columns for progress tracking
+    total_rows INTEGER,
+    total_chunks INTEGER,
+    processed_chunks INTEGER DEFAULT 0,
+    processed_rows INTEGER DEFAULT 0,
+    current_chunk INTEGER DEFAULT 0,
+    estimated_completion TIMESTAMP
+    -- Removed foreign key constraint
 );
 """)
 
-# Create pipeline_logs table with additional fields
+# Create pipeline_logs table (no foreign keys)
 con.execute("""
 CREATE TABLE pipeline_logs (
     id INTEGER PRIMARY KEY,
@@ -87,17 +96,16 @@ CREATE TABLE pipeline_logs (
     start_time TIMESTAMP,
     end_time TIMESTAMP,
     row_counts TEXT,
-    full_trace_json TEXT,
-    FOREIGN KEY (pipeline_id) REFERENCES pipelines(id),
-    FOREIGN KEY (run_id) REFERENCES pipeline_runs(id)
+    full_trace_json TEXT
+    -- Removed foreign key constraints
 );
 """)
 
 con.execute("""
 CREATE TABLE pipeline_log_relations (
     id INTEGER PRIMARY KEY,
-    pipeline_id INTEGER NOT NULL,
-    FOREIGN KEY (pipeline_id) REFERENCES pipelines(id)
+    pipeline_id INTEGER NOT NULL
+    -- Removed foreign key constraint
 );
 """)
 

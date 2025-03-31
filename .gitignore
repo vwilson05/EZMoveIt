@@ -5,3 +5,4 @@ config/config.json
 *.pyc
 __pycache__/
 insert_rows.py
+dlt_docs/

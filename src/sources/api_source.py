@@ -1,11 +1,13 @@
 import logging
 import json
 import os
-import requests
 from datetime import datetime
 import pendulum
 import dlt
 from itertools import islice
+from dlt.sources.helpers.rest_client import RESTClient
+from dlt.sources.helpers.rest_client.auth import BearerTokenAuth
+from dlt.sources.helpers.rest_client.paginators import PageNumberPaginator, OffsetPaginator, JSONResponseCursorPaginator
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "../../config")
 
@@ -37,89 +39,87 @@ def load_api_config(pipeline_name):
 
 def fetch_data_from_api(api_url, pipeline_name):
     api_config = load_api_config(pipeline_name)
-    if not api_url and "endpoint_url" in api_config:
-        api_url = api_config["endpoint_url"]
+    
+    # Get pagination settings from config
+    pagination_type = api_config.get("pagination", {}).get("type", "none")
+    page_size = api_config.get("pagination", {}).get("page_size", 100)
+    max_pages = api_config.get("pagination", {}).get("max_pages", None)
+    
+    # Configure paginator based on API type
+    paginator = None
+    if pagination_type == "page_number":
+        paginator = PageNumberPaginator(
+            page_size=page_size,
+            page_param="page",
+            max_pages=max_pages
+        )
+    elif pagination_type == "offset":
+        paginator = OffsetPaginator(
+            page_size=page_size,
+            offset_param="offset",
+            max_pages=max_pages
+        )
+    elif pagination_type == "cursor":
+        paginator = JSONResponseCursorPaginator(
+            cursor_path=api_config.get("cursor_path"),
+            max_pages=max_pages
+        )
 
-    if not api_url:
-        logging.error("❌ No API URL provided!")
-        return []
+    # Configure REST client
+    auth = None
+    if api_config.get("auth", {}).get("type") == "bearer":
+        auth = BearerTokenAuth(token=api_config["auth"]["token"])
 
-    headers = {}
-    if "auth" in api_config:
-        headers.update(api_config["auth"])
-    elif "auth_type" in api_config:
-        if api_config["auth_type"] == "api_key":
-            headers[api_config.get("api_key_header", "X-API-Key")] = api_config["api_key"]
-        elif api_config["auth_type"] == "bearer":
-            headers["Authorization"] = f"Bearer {api_config['bearer_token']}"
-        elif api_config["auth_type"] == "basic":
-            import base64
-            auth_string = f"{api_config['username']}:{api_config['password']}"
-            auth_bytes = auth_string.encode('ascii')
-            base64_bytes = base64.b64encode(auth_bytes)
-            base64_auth = base64_bytes.decode('ascii')
-            headers["Authorization"] = f"Basic {base64_auth}"
+    client = RESTClient(
+        base_url=api_url,
+        headers=api_config.get("headers", {}),
+        auth=auth,
+        paginator=paginator,
+        data_selector=api_config.get("data_selector")
+    )
 
-    response = requests.get(api_url, headers=headers, timeout=10)
-    response.raise_for_status()
-    data = response.json()
+    all_data = []
+    try:
+        # Use the client's paginate method to handle pagination
+        for page in client.paginate(""):  # Empty string since we already have full URL
+            all_data.extend(page)
+    except Exception as e:
+        logging.error(f"Error fetching data: {str(e)}")
+        raise
 
-    # Use data_selector if provided.
-    if isinstance(data, dict) and "data_selector" in api_config:
-        data = data.get(api_config["data_selector"], [])
-    elif not isinstance(data, list):
-        data = [data]
-
-    for item in data:
+    # Add extraction timestamp
+    for item in all_data:
         item["extracted_at"] = datetime.utcnow().isoformat()
-    return data
+    
+    return all_data
 
 # For API, we'll simply yield chunks in the resource functions.
 def get_api_resource(pipeline_name, table_name, api_url):
-    data = fetch_data_from_api(api_url, pipeline_name)
     api_config = load_api_config(pipeline_name)
     incremental_config = api_config.get("incremental", {})
-    incremental_type = incremental_config.get("cursor_path") or api_config.get("incremental_type", "FULL").upper()
     
-    if isinstance(incremental_type, str):
-        incremental_type = incremental_type.upper()
-    
-    if incremental_type == "INCREMENTAL":
-        primary_key = api_config.get("primary_key")
-        cursor_path = incremental_config.get("cursor_path") or api_config.get("delta_column")
-        delta_value = incremental_config.get("initial_value") or api_config.get("delta_value")
-        initial_value = pendulum.parse(delta_value) if delta_value else None
-
-        if "." in cursor_path:
-            effective_delta_field = cursor_path.replace(".", "_")
-            for item in data:
-                value = item
-                for key in cursor_path.split("."):
-                    if isinstance(value, dict) and key in value:
-                        value = value[key]
-                    else:
-                        value = None
-                        break
-                if value is not None:
-                    item[effective_delta_field] = value
-        else:
-            effective_delta_field = cursor_path
-
-        @dlt.resource(name=table_name, write_disposition="append")
-        def resource():
-            yield from paginate_generator(iter(data), 50000)
-
-        resource_with_mapping = resource.add_map(
-            lambda record: {**record,
-                            effective_delta_field: pendulum.parse(record[effective_delta_field])
-                           } if record.get(effective_delta_field) else record
+    @dlt.resource(
+        name=table_name,
+        write_disposition="append" if api_config.get("incremental_load", {}).get("enabled") else "replace",
+        primary_key=api_config.get("primary_key"),
+        pagination=api_config.get("pagination", {}),
+        retry_count=3  # Add retry for resilience
+    )
+    def resource():
+        yield from paginate_generator(
+            fetch_data_from_api(api_url, pipeline_name),
+            chunk_size=api_config.get("pagination", {}).get("page_size", 50000)
         )
-        return resource_with_mapping.apply_hints(
-            primary_key=primary_key,
-            incremental=dlt.sources.incremental(effective_delta_field, initial_value=initial_value)
+
+    if api_config.get("incremental_load", {}).get("enabled"):
+        field = api_config["incremental_load"]["field"]
+        resource = resource.add_map(
+            lambda record: {
+                **record,
+                field: pendulum.parse(record[field])
+            } if record.get(field) else record
+        ).apply_hints(
+            incremental=dlt.sources.incremental(field)
         )
-    else:
-        @dlt.resource(name=table_name, write_disposition="replace")
-        def resource():
-            yield from paginate_generator(iter(data), 50000)
-        return resource
+
+    return resource

@@ -9,6 +9,7 @@ import pandas as pd
 from src.pipelines.dlt_pipeline import run_pipeline_with_creds
 from src.db.duckdb_connection import execute_query
 import dlt
+from sqlalchemy import text
 
 CONFIG_DIR = "config"
 os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -16,13 +17,34 @@ os.makedirs(CONFIG_DIR, exist_ok=True)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 
-def get_verified_dlt_sources():
-    return [
-        "REST API (Public)",
-        "REST API (Private)",
-        "microsoft_sqlserver",
-        "oracle",
-    ]
+def get_sources_by_category():
+    return {
+        "API": [
+            "REST API - Public",
+            "REST API - Private"
+        ],
+        "Database": [
+            "SQL Server",
+            "Oracle",
+            "Snowflake",
+            "PostgreSQL",
+            "MySQL"
+        ]
+    }
+
+
+def get_internal_source_type(display_name):
+    """Maps display names to DLT source types"""
+    mapping = {
+        "REST API - Public": "rest_api",
+        "REST API - Private": "rest_api",
+        "SQL Server": "microsoft_sqlserver",
+        "Oracle": "oracle",
+        "Snowflake": "snowflake",
+        "PostgreSQL": "postgresql",
+        "MySQL": "mysql"
+    }
+    return mapping.get(display_name)
 
 
 def get_next_pipeline_id():
@@ -142,10 +164,19 @@ def pipeline_creator_page():
         if st.session_state.config_mode == "Manual":
             # Source Selection
             source_configs = get_source_configs()
-            source_options = ["REST API - Public", "REST API - Private", "Database", "File"]
+            
+            # Use the source mapping to get categorized sources
+            source_categories = get_sources_by_category()
+            source_category = st.selectbox(
+                "Source Category",
+                list(source_categories.keys())
+            )
+            
+            # Get available sources for the selected category
+            available_sources = source_categories.get(source_category, [])
             st.session_state.selected_source = st.selectbox(
                 "Select Source Type",
-                source_options
+                available_sources
             )
             
             # Source Configuration
@@ -216,24 +247,155 @@ def pipeline_creator_page():
                         "enabled": True,
                         "field": incremental_field
                     }
-            
-            elif st.session_state.selected_source == "Database":
-                # Database connection details
-                db_type = st.selectbox("Database Type", ["PostgreSQL", "MySQL", "SQLite"])
-                host = st.text_input("Host", placeholder="localhost")
-                port = st.number_input("Port", min_value=1, max_value=65535, value=5432)
-                database = st.text_input("Database Name")
-                username = st.text_input("Username")
-                password = st.text_input("Password", type="password")
                 
-                st.session_state.source_config = {
-                    "db_type": db_type,
-                    "host": host,
-                    "port": port,
-                    "database": database,
-                    "username": username,
-                    "password": password
+                # Add Advanced Settings expander
+                with st.expander("Advanced Settings"):
+                    st.write("API Performance Settings")
+                    
+                    # Pagination settings
+                    pagination_type = st.selectbox(
+                        "Pagination Type",
+                        ["none", "page_number", "offset", "cursor"],
+                        help="Select the pagination method used by the API"
+                    )
+                    
+                    if pagination_type != "none":
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            page_size = st.number_input(
+                                "Page Size",
+                                min_value=1,
+                                max_value=1000,
+                                value=100,
+                                help="Number of items per page"
+                            )
+                        with col2:
+                            parallel_requests = st.number_input(
+                                "Parallel Requests",
+                                min_value=1,
+                                max_value=10,
+                                value=4,
+                                help="Number of concurrent API requests"
+                            )
+                        
+                        max_pages = st.number_input(
+                            "Max Pages (optional)",
+                            min_value=1,
+                            value=None,
+                            help="Maximum number of pages to fetch (leave empty for unlimited)"
+                        )
+                        
+                        if pagination_type == "cursor":
+                            cursor_path = st.text_input(
+                                "Cursor Path",
+                                placeholder="next_cursor",
+                                help="JSON path to the cursor value in the response"
+                            )
+                    
+                    # Update source config with pagination settings
+                    st.session_state.source_config.update({
+                        "pagination": {
+                            "type": pagination_type,
+                            "page_size": page_size if pagination_type != "none" else None,
+                            "max_pages": max_pages if pagination_type != "none" else None,
+                            "cursor_path": cursor_path if pagination_type == "cursor" else None
+                        },
+                        "parallel_requests": parallel_requests if pagination_type != "none" else 1
+                    })
+            
+            elif st.session_state.selected_source in source_categories["Database"]:
+                # Get the internal source type for storage
+                source_type = get_internal_source_type(st.session_state.selected_source)
+                
+                # Initialize the db_config dictionary with default values
+                db_config = {
+                    "db_type": source_type,
+                    "mode": "sql_table",  # default mode
+                    "use_parallel": True,
+                    "chunk_size": 100000,
+                    "incremental_type": "FULL"
                 }
+                
+                # Database connection form
+                col1, col2 = st.columns(2)
+                with col1:
+                    db_config["host"] = st.text_input("Host", placeholder="localhost")
+                    db_config["port"] = st.number_input(
+                        "Port", 
+                        min_value=1, 
+                        max_value=65535, 
+                        value=1433 if st.session_state.selected_source == "SQL Server" else (
+                            1521 if st.session_state.selected_source == "Oracle" else (
+                                443 if st.session_state.selected_source == "Snowflake" else 5432
+                            )
+                        )
+                    )
+                    db_config["database"] = st.text_input("Database Name")
+                
+                with col2:
+                    db_config["user"] = st.text_input("Username")
+                    db_config["password"] = st.text_input("Password", type="password")
+                    
+                    # Oracle-specific fields
+                    if st.session_state.selected_source == "Oracle":
+                        db_config["service_name"] = st.text_input("Service Name", value="orcl")
+                    
+                    # SQL Server-specific fields
+                    if st.session_state.selected_source == "SQL Server":
+                        db_config["driver"] = st.text_input("ODBC Driver", value="ODBC Driver 17 for SQL Server")
+                        db_config["TrustServerCertificate"] = "yes"
+                        db_config["LongAsMax"] = "yes"
+                    
+                    # Snowflake-specific fields
+                    if st.session_state.selected_source == "Snowflake":
+                        db_config["account"] = st.text_input("Account", placeholder="orgname-accountname")
+                        db_config["warehouse"] = st.text_input("Warehouse", placeholder="compute_wh")
+                        db_config["role"] = st.text_input("Role (optional)", placeholder="ACCOUNTADMIN")
+                        db_config["schema"] = st.text_input("Schema", placeholder="PUBLIC")
+                
+                # Build connection string for display
+                if st.session_state.selected_source == "SQL Server":
+                    conn_str = f"mssql+pyodbc://{db_config['user']}:****@{db_config['host']}:{db_config['port']}/{db_config['database']}?driver={db_config['driver'].replace(' ', '+')}"
+                    source_url = f"microsoft_sqlserver://{db_config['host']}:{db_config['port']}/{db_config['database']}"
+                elif st.session_state.selected_source == "Oracle":
+                    conn_str = f"oracle+oracledb://{db_config['user']}:****@{db_config['host']}:{db_config['port']}/?service_name={db_config['service_name']}"
+                    source_url = f"oracle://{db_config['host']}:{db_config['port']}/{db_config['service_name']}"
+                elif st.session_state.selected_source == "Snowflake":
+                    conn_str = f"snowflake://{db_config['user']}:****@{db_config['account']}/{db_config['database']}/{db_config['schema']}?warehouse={db_config['warehouse']}"
+                    source_url = f"snowflake://{db_config['account']}/{db_config['database']}"
+                
+                st.session_state.source_url = source_url
+                
+                # Show the connection string (masked password)
+                st.code(conn_str, language="text")
+                
+                # Table selection
+                table_mode = st.radio(
+                    "Table Selection Mode",
+                    ["Single Table", "Multiple Tables"],
+                    horizontal=True
+                )
+                
+                if table_mode == "Single Table":
+                    db_config["mode"] = "sql_table"
+                    schema_name = st.text_input("Schema Name")
+                    table_name = st.text_input("Table Name")
+                    db_config["table"] = table_name
+                    if schema_name:
+                        db_config["schema"] = schema_name
+                else:
+                    db_config["mode"] = "sql_database"
+                    schema_name = st.text_input("Schema Name", placeholder="public")
+                    tables = st.text_input(
+                        "Tables (comma-separated, leave empty for all)", 
+                        placeholder="table1,table2,table3"
+                    )
+                    db_config["schema"] = schema_name
+                    if tables:
+                        db_config["tables"] = [t.strip() for t in tables.split(",")]
+                
+                # Store the configuration
+                st.session_state.source_config = db_config
             
             elif st.session_state.selected_source == "File":
                 file_type = st.selectbox("File Type", ["CSV", "JSON", "Excel"])
@@ -309,414 +471,144 @@ def pipeline_creator_page():
             ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         )
     
-    # Create Pipeline Button
+    # Replace the existing submit button section with new buttons
+    st.write("---")  # Add a visual separator
+    
     col1, col2 = st.columns(2)
+    
     with col1:
-        if st.button("Create Pipeline", type="primary"):
+        if st.button("Create Pipeline", type="primary", use_container_width=True):
+            # Validate inputs
             if not st.session_state.pipeline_name:
-                st.error("Please enter a pipeline name")
-            elif not st.session_state.source_url:
-                st.error("Please enter a source URL")
-            elif not st.session_state.source_config:
-                st.error("Please configure the source")
-            elif not st.session_state.dataset_name:
-                st.error("Please enter a dataset name")
-            elif not st.session_state.target_table:
-                st.error("Please enter a target table name")
-            else:
-                try:
-                    # Save source configuration to JSON file
-                    config_data = {
-                        "endpoint_url": st.session_state.source_url,
-                        "auth": st.session_state.source_config.get("auth", {}),
-                        "incremental_type": "FULL"
-                    }
-                    save_source_config(st.session_state.pipeline_name, config_data)
-                    
-                    # Insert pipeline record
-                    query = """
-                    INSERT INTO pipelines (
-                        id, name, source_url, target_table, dataset_name, schedule, source_config
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """
-                    schedule = None
-                    if st.session_state.schedule_option != "Manual":
-                        schedule = {
-                            "type": st.session_state.schedule_option.lower(),
-                            "interval_minutes": st.session_state.interval_minutes,
-                            "start_time": st.session_state.start_time_val.strftime("%H:%M:%S")
-                        }
-                        if st.session_state.schedule_option == "Weekly":
-                            schedule["weekday"] = weekday
-                    
-                    execute_query(
-                        query,
-                        params=(
-                            get_next_pipeline_id(),
-                            st.session_state.pipeline_name,
-                            st.session_state.source_url,
-                            st.session_state.target_table,
-                            st.session_state.dataset_name,
-                            json.dumps(schedule) if schedule else None,
-                            json.dumps(st.session_state.source_config)
-                        )
-                    )
-                    
-                    st.success("Pipeline created successfully!")
-                    
-                    # Clear form data
-                    for key in ['pipeline_name', 'source_url', 'target_table', 'dataset_name',
-                              'schedule_option', 'start_time_val', 'interval_minutes']:
-                        st.session_state[key] = ""
-                    st.session_state.source_config = {}
-                    
-                except Exception as e:
-                    st.error(f"Error creating pipeline: {str(e)}")
+                st.error("Please enter a pipeline name.")
+                return
+            if not st.session_state.source_url:
+                st.error("Please enter a source URL.")
+                return
+            if not st.session_state.target_table:
+                st.error("Please enter a target table name.")
+                return
+            
+            # Save pipeline configuration
+            pipeline_id = get_next_pipeline_id()
+            save_source_config(st.session_state.pipeline_name, st.session_state.source_config)
+            
+            # Insert pipeline into database
+            insert_query = """
+            INSERT INTO pipelines (
+                id, 
+                name, 
+                source_url, 
+                target_table, 
+                dataset_name, 
+                schedule, 
+                source_config,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+            
+            # Prepare schedule JSON if not manual
+            schedule = None
+            if st.session_state.schedule_option != "Manual":
+                schedule = {
+                    "type": st.session_state.schedule_option.lower(),
+                    "interval_minutes": st.session_state.interval_minutes if st.session_state.schedule_option == "Interval" else None,
+                    "start_time": st.session_state.start_time_val.strftime("%H:%M:%S") if st.session_state.schedule_option in ["Daily", "Weekly"] else None,
+                    "weekday": weekday if st.session_state.schedule_option == "Weekly" else None
+                }
+
+            execute_query(
+                insert_query,
+                params=(
+                    pipeline_id,
+                    st.session_state.pipeline_name,
+                    st.session_state.source_url,
+                    st.session_state.target_table,
+                    st.session_state.dataset_name,
+                    json.dumps(schedule) if schedule else None,
+                    json.dumps(st.session_state.source_config),
+                )
+            )
+            
+            # Navigate to Pipelines page
+            st.success("Pipeline created successfully!")
+            time.sleep(1)  # Brief pause for user feedback
+            st.session_state.current_page = "Pipeline List"
+            st.rerun()
     
     with col2:
-        if st.button("🚀 Create & Run Pipeline", type="secondary"):
+        if st.button("Create + Run Pipeline", type="primary", use_container_width=True):
+            # Validate inputs
             if not st.session_state.pipeline_name:
-                st.error("Please enter a pipeline name")
-            elif not st.session_state.source_url:
-                st.error("Please enter a source URL")
-            elif not st.session_state.source_config:
-                st.error("Please configure the source")
-            elif not st.session_state.dataset_name:
-                st.error("Please enter a dataset name")
-            elif not st.session_state.target_table:
-                st.error("Please enter a target table name")
-            else:
-                try:
-                    # Capture values before clearing session state
-                    pipeline_name = st.session_state.pipeline_name
-                    dataset_name = st.session_state.dataset_name
-                    target_table = st.session_state.target_table
-                    snowflake_creds = st.session_state.get("snowflake_creds")
-                    
-                    # Save source configuration to JSON file
-                    config_data = {
-                        "endpoint_url": st.session_state.source_url,
-                        "auth": st.session_state.source_config.get("auth", {}),
-                        "incremental_type": "FULL"
-                    }
-                    save_source_config(pipeline_name, config_data)
-                    
-                    # Insert pipeline record
-                    query = """
-                    INSERT INTO pipelines (
-                        id, name, source_url, target_table, dataset_name, schedule, source_config
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """
-                    schedule = None
-                    if st.session_state.schedule_option != "Manual":
-                        schedule = {
-                            "type": st.session_state.schedule_option.lower(),
-                            "interval_minutes": st.session_state.interval_minutes,
-                            "start_time": st.session_state.start_time_val.strftime("%H:%M:%S")
-                        }
-                        if st.session_state.schedule_option == "Weekly":
-                            schedule["weekday"] = weekday
-                    
-                    execute_query(
-                        query,
-                        params=(
-                            get_next_pipeline_id(),
-                            pipeline_name,
-                            st.session_state.source_url,
-                            target_table,
-                            dataset_name,
-                            json.dumps(schedule) if schedule else None,
-                            json.dumps(st.session_state.source_config)
-                        )
-                    )
-                    
-                    st.success("Pipeline created successfully!")
-                    
-                    # Create containers for different stages with custom styling
-                    st.markdown("""
-                        <style>
-                        .stProgress > div > div > div > div {
-                            background-color: #1f77b4;
-                        }
-                        .stProgress > div > div > div > div:nth-child(2) {
-                            background-color: #2ca02c;
-                        }
-                        .stProgress > div > div > div > div:nth-child(3) {
-                            background-color: #ff7f0e;
-                        }
-                        </style>
-                    """, unsafe_allow_html=True)
-                    
-                    # Create expandable section for pipeline progress
-                    with st.expander("Pipeline Progress", expanded=True):
-                        # Extract stage
-                        extract_container = st.empty()
-                        extract_status_text = st.empty()
-                        
-                        # Normalize stage
-                        normalize_container = st.empty()
-                        normalize_status_text = st.empty()
-                        
-                        # Load stage
-                        load_container = st.empty()
-                        load_status_text = st.empty()
-                        
-                        # Overall status and metrics
-                        status_container = st.empty()
-                        metrics_container = st.empty()
-                        
-                        result_container = {"status": "Pipeline started...", "result": None}
-                        
-                        def run_pipeline_thread():
-                            result_container["status"] = "Pipeline started..."
-                            res = run_pipeline_with_creds(pipeline_name, dataset_name, target_table, snowflake_creds)
-                            if res is not None:
-                                result_container["status"] = f"Pipeline completed: {res} rows loaded."
-                                result_container["result"] = res
-                            else:
-                                result_container["status"] = "Pipeline failed. Check logs."
-                        
-                        pipeline_thread = threading.Thread(target=run_pipeline_thread, daemon=True)
-                        pipeline_thread.start()
-                        
-                        # Update UI with progress
-                        while pipeline_thread.is_alive():
-                            # Get current run status
-                            run_status = execute_query(
-                                """
-                                SELECT status, extract_status, normalize_status, load_status, 
-                                       duration, rows_processed
-                                FROM pipeline_runs 
-                                WHERE pipeline_name = ? 
-                                ORDER BY start_time DESC 
-                                LIMIT 1
-                                """,
-                                (pipeline_name,),
-                                fetch=True
-                            )
-                            
-                            if run_status:
-                                status, extract_status, normalize_status, load_status, duration, rows = run_status[0]
-                                
-                                # Update extract progress
-                                extract_container.progress(100 if extract_status == 'completed' else 50)
-                                extract_status_text.markdown(f"**Extract:** {extract_status}")
-                                
-                                # Update normalize progress
-                                normalize_container.progress(100 if normalize_status == 'completed' else 50)
-                                normalize_status_text.markdown(f"**Normalize:** {normalize_status}")
-                                
-                                # Update load progress
-                                load_container.progress(100 if load_status == 'completed' else 50)
-                                load_status_text.markdown(f"**Load:** {load_status}")
-                                
-                                # Update overall status
-                                status_container.info(f"**Status:** {status}")
-                                
-                                # Update metrics if available
-                                if duration and rows:
-                                    metrics_container.markdown(f"""
-                                        ### 📊 Current Metrics
-                                        - **Duration:** {duration:.2f} seconds
-                                        - **Rows Processed:** {rows:,}
-                                    """)
-                            
-                            time.sleep(0.5)
-                        
-                        # Final update
-                        if result_container["result"] is not None:
-                            extract_status_text.markdown("✅ **Extraction complete**")
-                            normalize_status_text.markdown("✅ **Normalization complete**")
-                            load_status_text.markdown("✅ **Load complete**")
-                            status_container.success(result_container["status"])
-                            
-                            # Show final metrics
-                            final_metrics = execute_query(
-                                """
-                                SELECT duration, rows_processed
-                                FROM pipeline_runs 
-                                WHERE pipeline_name = ? 
-                                ORDER BY start_time DESC 
-                                LIMIT 1
-                                """,
-                                (pipeline_name,),
-                                fetch=True
-                            )
-                            
-                            if final_metrics:
-                                duration, rows = final_metrics[0]
-                                metrics_container.markdown(f"""
-                                    ### 📊 Final Metrics
-                                    - **Duration:** {duration:.2f} seconds
-                                    - **Rows Processed:** {rows:,}
-                                    - **Rows/Second:** {rows/duration:.2f}
-                                """)
-                        else:
-                            extract_status_text.markdown("❌ **Extraction failed**")
-                            normalize_status_text.markdown("❌ **Normalization failed**")
-                            load_status_text.markdown("❌ **Load failed**")
-                            status_container.error(result_container["status"])
-                    
-                    # Clear form data
-                    for key in ['pipeline_name', 'source_url', 'target_table', 'dataset_name',
-                              'schedule_option', 'start_time_val', 'interval_minutes']:
-                        st.session_state[key] = ""
-                    st.session_state.source_config = {}
-                    
-                except Exception as e:
-                    st.error(f"Error creating pipeline: {str(e)}")
+                st.error("Please enter a pipeline name.")
+                return
+            if not st.session_state.source_url:
+                st.error("Please enter a source URL.")
+                return
+            if not st.session_state.target_table:
+                st.error("Please enter a target table name.")
+                return
+            
+            # Save pipeline configuration
+            pipeline_id = get_next_pipeline_id()
+            save_source_config(st.session_state.pipeline_name, st.session_state.source_config)
+            
+            # Insert pipeline into database
+            insert_query = """
+            INSERT INTO pipelines (
+                id, 
+                name, 
+                source_url, 
+                target_table, 
+                dataset_name, 
+                schedule, 
+                source_config,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """
+            
+            # Prepare schedule JSON if not manual
+            schedule = None
+            if st.session_state.schedule_option != "Manual":
+                schedule = {
+                    "type": st.session_state.schedule_option.lower(),
+                    "interval_minutes": st.session_state.interval_minutes if st.session_state.schedule_option == "Interval" else None,
+                    "start_time": st.session_state.start_time_val.strftime("%H:%M:%S") if st.session_state.schedule_option in ["Daily", "Weekly"] else None,
+                    "weekday": weekday if st.session_state.schedule_option == "Weekly" else None
+                }
 
-    st.subheader("📜 Existing Pipelines")
-    pipelines = execute_query(
-        "SELECT id, name, source_url, target_table, dataset_name, schedule, last_run_status FROM pipelines ORDER BY id DESC",
-        fetch=True,
-    )
-    if pipelines:
-        for row in pipelines:
-            pid, pname, src, tgt, ds, schedule, status = row
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"**ID:** `{pid}` | **Name:** `{pname}`")
-                st.markdown(f"**Source URL:** `{src}`")
-                st.markdown(f"**Target Table:** `{tgt}` | **Schema:** `{ds}`")
-                st.markdown(f"**Schedule:** `{schedule if schedule else 'One-Time Run'}`")
-                st.markdown(f"**Last Run Status:** `{status}`")
-            with col2:
-                if status == "running":
-                    st.button("Running...", key=f"disabled_{pid}", disabled=True)
-                else:
-                    if st.button(f"Run {pname}", key=f"trigger_{pid}"):
-                        creds = st.session_state.get("snowflake_creds")
-                        if not creds:
-                            st.error("No Snowflake credentials found. Please enter them above.")
-                        else:
-                            # Create containers for different stages with custom styling
-                            st.markdown("""
-                                <style>
-                                .stProgress > div > div > div > div {
-                                    background-color: #1f77b4;
-                                }
-                                .stProgress > div > div > div > div:nth-child(2) {
-                                    background-color: #2ca02c;
-                                }
-                                .stProgress > div > div > div > div:nth-child(3) {
-                                    background-color: #ff7f0e;
-                                }
-                                </style>
-                            """, unsafe_allow_html=True)
-                                
-                            # Create expandable section for pipeline progress
-                            with st.expander("Pipeline Progress", expanded=True):
-                                # Extract stage
-                                extract_container = st.empty()
-                                extract_status_text = st.empty()
-                                
-                                # Normalize stage
-                                normalize_container = st.empty()
-                                normalize_status_text = st.empty()
-                                
-                                # Load stage
-                                load_container = st.empty()
-                                load_status_text = st.empty()
-                                
-                                # Overall status and metrics
-                                status_container = st.empty()
-                                metrics_container = st.empty()
-                                
-                                result_container = {"status": "Pipeline started...", "result": None}
-
-                                def run_pipeline_thread():
-                                    result_container["status"] = "Pipeline started..."
-                                    res = run_pipeline_with_creds(pname, ds, tgt, creds)
-                                    if res is not None:
-                                        result_container["status"] = f"Pipeline completed: {res} rows loaded."
-                                        result_container["result"] = res
-                                    else:
-                                        result_container["status"] = "Pipeline failed. Check logs."
-
-                                pipeline_thread = threading.Thread(target=run_pipeline_thread, daemon=True)
-                                pipeline_thread.start()
-
-                                # Update UI with progress
-                                while pipeline_thread.is_alive():
-                                    # Get current run status
-                                    run_status = execute_query(
-                                        """
-                                        SELECT status, extract_status, normalize_status, load_status, 
-                                               duration, rows_processed
-                                        FROM pipeline_runs 
-                                        WHERE pipeline_name = ? 
-                                        ORDER BY start_time DESC 
-                                        LIMIT 1
-                                        """,
-                                        (pname,),
-                                        fetch=True
-                                    )
-                                    
-                                    if run_status:
-                                        status, extract_status, normalize_status, load_status, duration, rows = run_status[0]
-                                        
-                                        # Update extract progress
-                                        extract_container.progress(100 if extract_status == 'completed' else 50)
-                                        extract_status_text.markdown(f"**Extract:** {extract_status}")
-                                        
-                                        # Update normalize progress
-                                        normalize_container.progress(100 if normalize_status == 'completed' else 50)
-                                        normalize_status_text.markdown(f"**Normalize:** {normalize_status}")
-                                        
-                                        # Update load progress
-                                        load_container.progress(100 if load_status == 'completed' else 50)
-                                        load_status_text.markdown(f"**Load:** {load_status}")
-                                        
-                                        # Update overall status
-                                        status_container.info(f"**Status:** {status}")
-                                        
-                                        # Update metrics if available
-                                        if duration and rows:
-                                            metrics_container.markdown(f"""
-                                                ### 📊 Current Metrics
-                                                - **Duration:** {duration:.2f} seconds
-                                                - **Rows Processed:** {rows:,}
-                                            """)
-                                    
-                                    time.sleep(0.5)
-
-                                # Final update
-                                if result_container["result"] is not None:
-                                    extract_status_text.markdown("✅ **Extraction complete**")
-                                    normalize_status_text.markdown("✅ **Normalization complete**")
-                                    load_status_text.markdown("✅ **Load complete**")
-                                    status_container.success(result_container["status"])
-                                    
-                                    # Show final metrics
-                                    final_metrics = execute_query(
-                                        """
-                                        SELECT duration, rows_processed
-                                        FROM pipeline_runs 
-                                        WHERE pipeline_name = ? 
-                                        ORDER BY start_time DESC 
-                                        LIMIT 1
-                                        """,
-                                        (pname,),
-                                        fetch=True
-                                    )
-                                    
-                                    if final_metrics:
-                                        duration, rows = final_metrics[0]
-                                        metrics_container.markdown(f"""
-                                            ### 📊 Final Metrics
-                                            - **Duration:** {duration:.2f} seconds
-                                            - **Rows Processed:** {rows:,}
-                                            - **Rows/Second:** {rows/duration:.2f}
-                                        """)
-                                else:
-                                    extract_status_text.markdown("❌ **Extraction failed**")
-                                    normalize_status_text.markdown("❌ **Normalization failed**")
-                                    load_status_text.markdown("❌ **Load failed**")
-                                    status_container.error(result_container["status"])
-                    st.markdown("---")
-    else:
-        st.info("No pipelines found. Create one above!")
+            execute_query(
+                insert_query,
+                params=(
+                    pipeline_id,
+                    st.session_state.pipeline_name,
+                    st.session_state.source_url,
+                    st.session_state.target_table,
+                    st.session_state.dataset_name,
+                    json.dumps(schedule) if schedule else None,
+                    json.dumps(st.session_state.source_config),
+                )
+            )
+            
+            # Create and start pipeline run
+            run_id = get_next_pipeline_run_id()
+            insert_run_query = """
+            INSERT INTO pipeline_runs (id, pipeline_id, status, start_time, end_time, error_message)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """
+            execute_query(
+                insert_run_query,
+                params=(run_id, pipeline_id, "pending", datetime.now(), None, None)
+            )
+            
+            # Navigate to Pipeline Runs page
+            st.success("Pipeline created and starting run!")
+            time.sleep(1)  # Brief pause for user feedback
+            st.switch_page(f"pages/pipeline_runs.py?run_id={run_id}")
 
 
 if __name__ == "__main__":
