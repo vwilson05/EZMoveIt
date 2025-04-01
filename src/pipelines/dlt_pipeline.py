@@ -229,6 +229,155 @@ def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str, run_id:
         (run_id, pipeline_id, pipeline_name)
     )
 
+    # If this is a metadata-driven pipeline, update the source_config dynamically
+    if metadata_selection:
+        logging.info(f"Metadata-driven pipeline detected. Selection criteria: {metadata_selection}")
+        
+        # Determine how to fetch metadata based on selection type
+        if metadata_selection["type"] == "explicit":
+            # Explicit object selection - fetch by IDs
+            object_ids = metadata_selection["object_ids"]
+            load_type = metadata_selection["load_type"]
+            
+            # Fetch current metadata for the selected objects
+            id_placeholders = ", ".join(["?" for _ in object_ids])
+            query = f"""
+            SELECT 
+                id, source_type, driver_type, logical_name, hostname, port,
+                database_name, schema_name, table_name, source_url, endpoint,
+                load_type, primary_key, delta_column, delta_value
+            FROM metadata_config
+            WHERE id IN ({id_placeholders})
+            """
+            params = object_ids
+            
+        else:  # Filter-based selection
+            # Build a query based on filter criteria
+            load_type = metadata_selection["load_type"]
+            filters = metadata_selection["filters"]
+            
+            query_parts = ["SELECT id, source_type, driver_type, logical_name, hostname, port, "
+                          "database_name, schema_name, table_name, source_url, endpoint, "
+                          "load_type, primary_key, delta_column, delta_value "
+                          "FROM metadata_config WHERE 1=1"]
+            params = []
+            
+            # Add filter conditions
+            if filters.get("source_type"):
+                query_parts.append("AND source_type = ?")
+                params.append(filters["source_type"])
+            
+            if filters.get("logical_name"):
+                query_parts.append("AND logical_name = ?")
+                params.append(filters["logical_name"])
+                
+            if filters.get("database_name"):
+                query_parts.append("AND database_name = ?")
+                params.append(filters["database_name"])
+                
+            if filters.get("schema_name"):
+                query_parts.append("AND schema_name = ?")
+                params.append(filters["schema_name"])
+            
+            # Always filter by the pipeline's load type
+            query_parts.append("AND load_type = ?")
+            params.append(load_type)
+            
+            # Construct the final query
+            query = " ".join(query_parts)
+            logging.info(f"Filter-based query: {query} with params: {params}")
+        
+        # Execute the query to get current metadata
+        current_metadata = execute_query(query, params=params, fetch=True)
+        
+        if current_metadata:
+            logging.info(f"Found {len(current_metadata)} objects matching selection criteria")
+            
+            # Group by source connection to handle multiple sources
+            source_groups = {}
+            for record in current_metadata:
+                # Create key based on source type
+                if record[1] in ["SQL Server", "Oracle"]:  # Database sources
+                    source_key = f"{record[1]}_{record[4]}_{record[6]}"  # source_type_hostname_database
+                else:  # API sources
+                    source_key = f"{record[1]}_{record[9]}"  # source_type_url
+                    
+                if source_key not in source_groups:
+                    source_groups[source_key] = {
+                        "source_type": record[1],
+                        "driver_type": record[2],
+                        "hostname": record[4],
+                        "port": record[5],
+                        "database_name": record[6],
+                        "schema_name": record[7],
+                        "source_url": record[9],
+                        "tables": []
+                    }
+                
+                # Add table info
+                source_groups[source_key]["tables"].append({
+                    "table_name": record[8],
+                    "primary_key": record[12],
+                    "delta_column": record[13],
+                    "delta_value": record[14]
+                })
+            
+            # Log all found source groups
+            logging.info(f"Source groups: {json.dumps(source_groups)}")
+            
+            # For now, we'll use the first source group (most pipelines will have just one)
+            # In a future enhancement, we could handle multiple source groups
+            if source_groups:
+                primary_source = list(source_groups.values())[0]
+                
+                # Update the source_config based on source type
+                if primary_source["source_type"] in ["SQL Server", "Oracle"]:
+                    # Database configuration
+                    db_type = primary_source["source_type"].lower().replace(" ", "_")
+                    source_config.update({
+                        "db_type": db_type,
+                        "mode": "sql_database" if len(primary_source["tables"]) > 1 else "sql_table",
+                        "host": primary_source["hostname"],
+                        "port": primary_source["port"],
+                        "database": primary_source["database_name"],
+                        "schema": primary_source["schema_name"],
+                        "incremental_type": load_type.upper(),
+                        "use_parallel": True,
+                        "chunk_size": source_config.get("chunk_size", 100000)
+                    })
+                    
+                    if source_config["mode"] == "sql_table":
+                        # Single table mode
+                        source_config["table"] = primary_source["tables"][0]["table_name"]
+                        if load_type.lower() == "incremental":
+                            source_config["primary_key"] = primary_source["tables"][0]["primary_key"]
+                            source_config["delta_column"] = primary_source["tables"][0]["delta_column"]
+                            source_config["delta_value"] = primary_source["tables"][0]["delta_value"]
+                    else:
+                        # Multiple tables mode - IMPORTANT: This is the key change
+                        source_config["tables"] = [t["table_name"] for t in primary_source["tables"]]
+                        
+                        # For incremental loads in multi-table mode
+                        if load_type.lower() == "incremental" and primary_source["tables"]:
+                            source_config["primary_key"] = primary_source["tables"][0]["primary_key"]
+                            source_config["delta_column"] = primary_source["tables"][0]["delta_column"]
+                            source_config["delta_value"] = primary_source["tables"][0]["delta_value"]
+                    
+                    # For SQL Server, add driver if needed
+                    if db_type == "sql_server":
+                        source_config["driver"] = primary_source["driver_type"] or "ODBC+Driver+17+for+SQL+Server"
+                        
+                    logging.info(f"Updated source config from metadata: {source_config}")
+                    
+                    # Update the source URL as well if it was determined from metadata
+                    if db_type == "sql_server":
+                        source_url = f"microsoft_sqlserver://{primary_source['hostname']}:{primary_source['port']}/{primary_source['database_name']}"
+                    elif db_type == "oracle":
+                        source_url = f"oracle://{primary_source['hostname']}:{primary_source['port']}/{primary_source['database_name']}"
+                    
+                    source_url_lower = source_url.lower()
+                    logging.info(f"Updated source URL from metadata: {source_url}")
+
     # If the source URL is an API endpoint (http), load API configuration
     if source_url_lower.startswith("http"):
         logging.info('Loading API configuration...')

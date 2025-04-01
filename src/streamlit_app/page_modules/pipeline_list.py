@@ -40,7 +40,8 @@ def pipeline_list_page():
         target_table, 
         dataset_name, 
         schedule,
-        created_at
+        created_at,
+        metadata_selection
     FROM pipelines
     ORDER BY created_at DESC
     """
@@ -55,7 +56,7 @@ def pipeline_list_page():
     ad_hoc_pipelines = []
     
     for pipeline in pipelines:
-        pipeline_id, name, source_url, target_table, dataset_name, schedule_json, created_at = pipeline
+        pipeline_id, name, source_url, target_table, dataset_name, schedule_json, created_at, metadata_selection_json = pipeline
         
         # Parse the schedule if it exists
         schedule = None
@@ -65,6 +66,16 @@ def pipeline_list_page():
             except:
                 schedule = None
         
+        # Parse metadata selection if it exists
+        is_metadata_driven = False
+        metadata_selection = None
+        if metadata_selection_json:
+            try:
+                metadata_selection = json.loads(metadata_selection_json)
+                is_metadata_driven = True
+            except:
+                metadata_selection = None
+        
         pipeline_data = {
             "id": pipeline_id,
             "name": name,
@@ -72,13 +83,53 @@ def pipeline_list_page():
             "target_table": target_table,
             "dataset_name": dataset_name,
             "created_at": created_at,
-            "schedule": schedule
+            "schedule": schedule,
+            "is_metadata_driven": is_metadata_driven,
+            "metadata_selection": metadata_selection
         }
         
         if schedule and schedule.get('type', '').lower() != 'manual':
             scheduled_pipelines.append(pipeline_data)
         else:
             ad_hoc_pipelines.append(pipeline_data)
+    
+    # Add legend for the icons
+    st.markdown("""
+    <style>
+    .metadata-icon {
+        color: #2E86C1;
+        font-size: 20px;
+    }
+    .manual-icon {
+        color: #808080;
+        font-size: 20px;
+    }
+    .legend-container {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-right: 20px;
+    }
+    .legend-text {
+        margin-left: 5px;
+    }
+    </style>
+    
+    <div class="legend-container">
+        <div class="legend-item">
+            <span class="metadata-icon">🔍</span>
+            <span class="legend-text">Metadata-Driven Pipeline</span>
+        </div>
+        <div class="legend-item">
+            <span class="manual-icon">📋</span>
+            <span class="legend-text">Manual Pipeline</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Display tabs for Scheduled and Ad Hoc pipelines
     tab1, tab2 = st.tabs(["Scheduled Pipelines", "Ad Hoc Pipelines"])
@@ -87,12 +138,43 @@ def pipeline_list_page():
         if scheduled_pipelines:
             st.subheader("Scheduled Pipelines")
             for pipeline in scheduled_pipelines:
-                with st.expander(f"🔄 {pipeline['name']}"):
+                # Choose icon based on whether pipeline is metadata-driven
+                icon = "🔍" if pipeline['is_metadata_driven'] else "🔄"
+                
+                # Add a custom CSS class for styling
+                expander_class = "metadata-pipeline" if pipeline['is_metadata_driven'] else "standard-pipeline"
+                
+                with st.expander(f"{icon} {pipeline['name']}", expanded=False):
                     col1, col2 = st.columns([3, 1])
                     
                     with col1:
                         st.write(f"**Source URL:** {pipeline['source_url']}")
                         st.write(f"**Target:** {pipeline['dataset_name']}.{pipeline['target_table']}")
+                        
+                        # Show metadata selection info if applicable
+                        if pipeline['is_metadata_driven']:
+                            metadata_type = pipeline['metadata_selection']['type']
+                            if metadata_type == "filter":
+                                st.write("**Metadata:** Filter-based selection")
+                                
+                                # Show filter criteria
+                                filters = pipeline['metadata_selection'].get('filters', {})
+                                filter_text = []
+                                if filters.get('source_type'):
+                                    filter_text.append(f"Source Type: {filters['source_type']}")
+                                if filters.get('logical_name'):
+                                    filter_text.append(f"Logical Name: {filters['logical_name']}")
+                                if filters.get('database_name'):
+                                    filter_text.append(f"Database: {filters['database_name']}")
+                                if filters.get('schema_name'):
+                                    filter_text.append(f"Schema: {filters['schema_name']}")
+                                
+                                if filter_text:
+                                    st.write(f"**Filter:** {', '.join(filter_text)}")
+                                st.write(f"**Load Type:** {pipeline['metadata_selection'].get('load_type', 'full')}")
+                            else:
+                                object_count = len(pipeline['metadata_selection'].get('object_ids', []))
+                                st.write(f"**Metadata:** Explicit selection ({object_count} objects)")
                         
                         schedule_info = pipeline['schedule']
                         if schedule_info:
@@ -116,6 +198,14 @@ def pipeline_list_page():
                             st.session_state[f"pipeline_{pipeline['id']}_status"] = ""
                         
                         status_key = f"pipeline_{pipeline['id']}_status"
+                        
+                        # Add details button that links to a pipeline details page
+                        if st.button("View Details", key=f"details_{pipeline['id']}"):
+                            # We'll need to implement this page
+                            st.session_state.current_page = "Pipeline Details"
+                            st.session_state.selected_pipeline_id = pipeline['id']
+                            st.rerun()
+                        
                         if st.button("Run Now", key=f"run_{pipeline['id']}"):
                             creds = st.session_state.get("snowflake_creds")
                             if not creds:
@@ -150,13 +240,41 @@ def pipeline_list_page():
         if ad_hoc_pipelines:
             st.subheader("Ad Hoc Pipelines")
             for pipeline in ad_hoc_pipelines:
-                with st.expander(f"📋 {pipeline['name']}"):
+                # Choose icon based on whether pipeline is metadata-driven
+                icon = "🔍" if pipeline['is_metadata_driven'] else "📋"
+                
+                with st.expander(f"{icon} {pipeline['name']}"):
                     col1, col2 = st.columns([3, 1])
                     
                     with col1:
                         st.write(f"**Source URL:** {pipeline['source_url']}")
                         st.write(f"**Target:** {pipeline['dataset_name']}.{pipeline['target_table']}")
                         st.write(f"**Created:** {pipeline['created_at']}")
+                        
+                        # Show metadata selection info if applicable
+                        if pipeline['is_metadata_driven']:
+                            metadata_type = pipeline['metadata_selection']['type']
+                            if metadata_type == "filter":
+                                st.write("**Metadata:** Filter-based selection")
+                                
+                                # Show filter criteria
+                                filters = pipeline['metadata_selection'].get('filters', {})
+                                filter_text = []
+                                if filters.get('source_type'):
+                                    filter_text.append(f"Source Type: {filters['source_type']}")
+                                if filters.get('logical_name'):
+                                    filter_text.append(f"Logical Name: {filters['logical_name']}")
+                                if filters.get('database_name'):
+                                    filter_text.append(f"Database: {filters['database_name']}")
+                                if filters.get('schema_name'):
+                                    filter_text.append(f"Schema: {filters['schema_name']}")
+                                
+                                if filter_text:
+                                    st.write(f"**Filter:** {', '.join(filter_text)}")
+                                st.write(f"**Load Type:** {pipeline['metadata_selection'].get('load_type', 'full')}")
+                            else:
+                                object_count = len(pipeline['metadata_selection'].get('object_ids', []))
+                                st.write(f"**Metadata:** Explicit selection ({object_count} objects)")
                     
                     with col2:
                         # Initialize status in session state if not exists
@@ -164,6 +282,14 @@ def pipeline_list_page():
                             st.session_state[f"pipeline_{pipeline['id']}_status"] = ""
                         
                         status_key = f"pipeline_{pipeline['id']}_status"
+                        
+                        # Add details button that links to a pipeline details page
+                        if st.button("View Details", key=f"details_{pipeline['id']}"):
+                            # We'll need to implement this page
+                            st.session_state.current_page = "Pipeline Details"
+                            st.session_state.selected_pipeline_id = pipeline['id']
+                            st.rerun()
+                        
                         if st.button("Run Now", key=f"run_{pipeline['id']}"):
                             creds = st.session_state.get("snowflake_creds")
                             if not creds:

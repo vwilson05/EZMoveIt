@@ -42,7 +42,8 @@ CREATE TABLE pipelines (
     successful_runs INTEGER DEFAULT 0,
     failed_runs INTEGER DEFAULT 0,
     last_successful_run TIMESTAMP,
-    last_failed_run TIMESTAMP
+    last_failed_run TIMESTAMP,
+    metadata_selection TEXT
 );
 """)
 
