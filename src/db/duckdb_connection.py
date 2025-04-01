@@ -23,6 +23,9 @@ def execute_query(query, params=None, fetch=False):
         else:
             result = conn.execute(query)
         
+        # Explicitly commit changes to ensure they're persisted
+        conn.commit()
+        
         if fetch:
             return result.fetchall()
         return result
