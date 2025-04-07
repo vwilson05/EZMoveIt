@@ -203,16 +203,24 @@ def log_pipeline_execution(pipeline_name: str, table_name: str, dataset_name: st
 
 def run_pipeline(pipeline_name: str, dataset_name: str, table_name: str, run_id: int = None):
     start_time = time.time()
-    result = execute_query("SELECT id, source_url FROM pipelines WHERE name = ?", (pipeline_name,), fetch=True)
+    result = execute_query(
+        "SELECT id, source_url, metadata_selection FROM pipelines WHERE name = ?",
+        (pipeline_name,),
+        fetch=True
+    )
     if not result:
         logging.error(f"No source URL found for pipeline `{pipeline_name}`")
         send_slack_message(f"Pipeline `{pipeline_name}` failed: No source URL found.")
         return None
 
-    pipeline_id, source_url = result[0]
+    pipeline_id, source_url, metadata_selection_json = result[0]
     source_url = source_url.strip()
     source_url_lower = source_url.lower()
     logging.info(f"Normalized source URL: {source_url_lower}")
+
+    # Parse metadata_selection if it exists
+    metadata_selection = json.loads(metadata_selection_json) if metadata_selection_json else None
+    logging.info(f"Metadata selection: {metadata_selection}")
 
     # Get next pipeline run ID
     next_id_result = execute_query("SELECT COALESCE(MAX(id), 0) + 1 FROM pipeline_runs", fetch=True)

@@ -286,6 +286,22 @@ def pipeline_creator_page():
             key="manual_pipeline_name"
         )
         
+        # Dataset Name
+        st.session_state.dataset_name = st.text_input(
+            "Dataset Name",
+            value=st.session_state.dataset_name,
+            placeholder="e.g., CUSTOMER_DATA",
+            key="manual_dataset_name"
+        )
+        
+        # Target Table Name
+        st.session_state.target_table = st.text_input(
+            "Target Table Name",
+            value=st.session_state.target_table,
+            placeholder="e.g., CUSTOMER_ORDERS",
+            key="manual_target_table"
+        )
+        
         # Configuration Mode
         st.session_state.config_mode = st.radio(
             "Configuration Mode",
@@ -581,6 +597,195 @@ def pipeline_creator_page():
                     st.session_state.source_config = json.loads(json_config)
                 except json.JSONDecodeError:
                     st.error("Invalid JSON format")
+        
+        # Schedule Configuration
+        st.markdown("---")
+        st.subheader("Schedule Configuration")
+        
+        schedule_option = st.radio(
+            "Schedule Type",
+            ["Manual", "Interval", "Daily", "Weekly"],
+            horizontal=True,
+            key="manual_schedule_option"
+        )
+        
+        if schedule_option == "Interval":
+            interval_minutes = st.number_input(
+                "Interval (minutes)",
+                min_value=1,
+                max_value=1440,
+                value=60,
+                key="manual_interval_minutes"
+            )
+        elif schedule_option == "Daily":
+            start_time_val = st.time_input(
+                "Start Time",
+                value=datetime.now().time(),
+                key="manual_start_time"
+            )
+        elif schedule_option == "Weekly":
+            col1, col2 = st.columns(2)
+            with col1:
+                start_time_val = st.time_input(
+                    "Start Time",
+                    value=datetime.now().time(),
+                    key="manual_weekly_start_time"
+                )
+            with col2:
+                weekday = st.selectbox(
+                    "Day of Week",
+                    ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+                    key="manual_weekday"
+                )
+        
+        # Prepare schedule JSON
+        schedule = None
+        if schedule_option != "Manual":
+            schedule = {
+                "type": schedule_option.lower(),
+                "interval_minutes": interval_minutes if schedule_option == "Interval" else None,
+                "start_time": start_time_val.strftime("%H:%M:%S") if schedule_option in ["Daily", "Weekly"] else None,
+                "weekday": weekday if schedule_option == "Weekly" else None
+            }
+        
+        # Create Pipeline buttons
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("Create Pipeline", type="primary", use_container_width=True, key="manual_create_btn"):
+                if not st.session_state.pipeline_name:
+                    st.error("Please enter a pipeline name.")
+                elif not st.session_state.dataset_name:
+                    st.error("Please enter a dataset name.")
+                elif not st.session_state.target_table:
+                    st.error("Please enter a target table name.")
+                else:
+                    try:
+                        # Save configuration to file
+                        save_source_config(st.session_state.pipeline_name, st.session_state.source_config)
+                        
+                        # Insert pipeline into database
+                        pipeline_id = get_next_pipeline_id()
+                        insert_query = """
+                        INSERT INTO pipelines (
+                            id, 
+                            name, 
+                            source_url, 
+                            target_table, 
+                            dataset_name, 
+                            schedule, 
+                            source_config,
+                            metadata_selection,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """
+                        
+                        execute_query(
+                            insert_query,
+                            params=(
+                                pipeline_id,
+                                st.session_state.pipeline_name,
+                                st.session_state.source_url,
+                                st.session_state.target_table,
+                                st.session_state.dataset_name,
+                                json.dumps(schedule) if schedule else None,
+                                json.dumps(st.session_state.source_config),
+                                None  # metadata_selection is None for manual configuration
+                            )
+                        )
+                        
+                        st.success("Pipeline created successfully!")
+                        time.sleep(1)  # Brief pause for user feedback
+                        st.session_state.current_page = "Pipeline List"
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error creating pipeline: {str(e)}")
+        
+        with col2:
+            if st.button("Create + Run Pipeline", type="primary", use_container_width=True, key="manual_create_run_btn"):
+                if not st.session_state.pipeline_name:
+                    st.error("Please enter a pipeline name.")
+                elif not st.session_state.dataset_name:
+                    st.error("Please enter a dataset name.")
+                elif not st.session_state.target_table:
+                    st.error("Please enter a target table name.")
+                else:
+                    try:
+                        # Save configuration to file
+                        save_source_config(st.session_state.pipeline_name, st.session_state.source_config)
+                        
+                        # Insert pipeline into database
+                        pipeline_id = get_next_pipeline_id()
+                        insert_query = """
+                        INSERT INTO pipelines (
+                            id, 
+                            name, 
+                            source_url, 
+                            target_table, 
+                            dataset_name, 
+                            schedule, 
+                            source_config,
+                            metadata_selection,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """
+                        
+                        execute_query(
+                            insert_query,
+                            params=(
+                                pipeline_id,
+                                st.session_state.pipeline_name,
+                                st.session_state.source_url,
+                                st.session_state.target_table,
+                                st.session_state.dataset_name,
+                                json.dumps(schedule) if schedule else None,
+                                json.dumps(st.session_state.source_config),
+                                None  # metadata_selection is None for manual configuration
+                            )
+                        )
+                        
+                        # Create and start pipeline run
+                        run_id = get_next_pipeline_run_id()
+                        insert_run_query = """
+                        INSERT INTO pipeline_runs (id, pipeline_id, pipeline_name, status, start_time, end_time, error_message)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """
+                        execute_query(
+                            insert_run_query,
+                            params=(
+                                run_id,
+                                pipeline_id,
+                                st.session_state.pipeline_name,
+                                "queued",
+                                datetime.now(),
+                                None,
+                                None
+                            )
+                        )
+                        
+                        # Start the pipeline run in a separate thread
+                        thread = threading.Thread(
+                            target=run_pipeline_with_creds,
+                            args=(
+                                st.session_state.pipeline_name,
+                                st.session_state.dataset_name,
+                                st.session_state.target_table,
+                                load_snowflake_credentials()
+                            )
+                        )
+                        thread.start()
+                        
+                        st.success("Pipeline created and started successfully!")
+                        time.sleep(1)  # Brief pause for user feedback
+                        st.session_state.current_page = "Pipeline List"
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error creating and running pipeline: {str(e)}")
 
     # Tab 2: Metadata-Driven Configuration (new functionality)
     with tabs[1]:
